@@ -37,7 +37,8 @@ ssh_pwauth: true
 users:
   - name: {username}
     gecos: Raspberry Pi Config User
-    groups: users,adm,dialout,audio,video,plugdev,gpio,i2c,spi,input,netdev
+    groups: users,adm,sudo,dialout,audio,video,plugdev,gpio,i2c,spi,input,netdev
+    sudo: ALL=(ALL:ALL) ALL
     shell: /bin/bash
     lock_passwd: false
     plain_text_passwd: {password}
