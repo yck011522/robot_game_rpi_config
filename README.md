@@ -46,7 +46,7 @@ rpi5-16: 192.168.0.16/24
 Example usage after flashing one card:
 
 ```bash
-python scripts/prepare_card.py --device 1 --boot E:\\ --username pi --password pi1234
+python scripts/prepare_card.py --device 1 --boot D:\\ --username pi --password pi1234
 ```
 
 On macOS/Linux, the boot partition path may look like:
