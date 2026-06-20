@@ -22,6 +22,9 @@ The intended workflow is:
 
 1. Flash a microSD card using Raspberry Pi Imager.
 2. Use Raspberry Pi OS with Desktop, 64-bit.
+    hostname rpi5-11 (see below)
+    username: pi
+    password: pi1234
 3. Reinsert the flashed card into the host computer.
 4. Run `scripts/prepare_card.py` on the boot partition of the flashed card.
 5. Boot the Raspberry Pi on the closed LAN.
@@ -32,24 +35,24 @@ The current static network plan is:
 ```text
 Host computer: 192.168.0.10/24
 
-rpi5-01: 192.168.0.11/24
-rpi5-02: 192.168.0.12/24
-rpi5-03: 192.168.0.13/24
-rpi5-04: 192.168.0.14/24
-rpi5-05: 192.168.0.15/24
-rpi5-06: 192.168.0.16/24
+rpi5-11: 192.168.0.11/24
+rpi5-12: 192.168.0.12/24
+rpi5-13: 192.168.0.13/24
+rpi5-14: 192.168.0.14/24
+rpi5-15: 192.168.0.15/24
+rpi5-16: 192.168.0.16/24
 ```
 
 Example usage after flashing one card:
 
 ```bash
-python scripts/prepare_card.py --device 1 --boot E:\\ --username victor --password "your-password"
+python scripts/prepare_card.py --device 1 --boot E:\\ --username pi --password pi1234
 ```
 
 On macOS/Linux, the boot partition path may look like:
 
 ```bash
-python scripts/prepare_card.py --device 1 --boot /Volumes/bootfs --username victor --password "your-password"
+python scripts/prepare_card.py --device 1 --boot /Volumes/bootfs --username pi --password pi1234
 ```
 
 The script writes first-boot configuration files to the boot partition. It does not write the Raspberry Pi OS image itself; that is still handled by Raspberry Pi Imager.
