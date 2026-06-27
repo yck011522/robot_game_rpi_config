@@ -64,6 +64,15 @@ The Raspberry Pi listener processes should bind locally to:
 
 The listeners should keep running even if the broadcaster starts late, stops, disconnects, or restarts. Since this is UDP, there is no persistent connection. Packets sent while a listener is down are simply lost.
 
+Protocol note:
+
+- The canonical payload is the Display Broadcast Protocol v1 envelope:
+   - top level fields: `v`, `seq`, `ts_wall_ns`, `state`
+   - game fields (for example stage/timer) are read from `state`, typically
+      `state.stage` or `state.active_stage` and `state.countdown_s`
+- During migration, some local scripts may still accept the legacy flat test
+   payload (`game_state`, `timer_s`) as a temporary fallback.
+
 ### Current verified state on `rpi5-11`
 
 The first test Pi has successfully booted with:

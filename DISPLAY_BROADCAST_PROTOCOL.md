@@ -398,3 +398,14 @@ subnet broadcast address while preserving the recorded stage timing.
 - Endpoint and Pi mapping: `config/device_ports_and_addr.yaml`
 - Regression tests: `tests/test_display_broadcast.py`
 
+## 9. This repo's local test scripts
+
+In `robot_game_rpi_config`, the local test sender/receiver now follow the same
+v1 envelope shape in this document:
+
+- `scripts/dummy_broadcast.py` sends `{"v","seq","ts_wall_ns","state"}` with
+    a minimal synthetic `state` body.
+- `rpi_app/player_panel.py` reads stage/timer from nested `state` fields.
+- During transition, `player_panel.py` still accepts the old flat payload
+    (`game_state`, `timer_s`) as a temporary fallback.
+

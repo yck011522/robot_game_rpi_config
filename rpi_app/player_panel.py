@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Portrait (480x1920) pygame UI that renders minimal player state from UDP."""
+"""Portrait (480x1920) pygame UI that renders minimal player state from UDP.
+
+Preferred input is Display Broadcast Protocol v1:
+    {"v": 1, "seq": <int>, "ts_wall_ns": <int>, "state": {...}}
+
+During migration this receiver also accepts the old flat payload format.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +16,9 @@ import time
 from typing import Any
 
 import pygame
+
+
+PROTOCOL_VERSION = 1
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,6 +58,30 @@ def read_latest(sock: socket.socket) -> dict[str, Any] | None:
             latest = payload
 
     return latest
+
+
+def extract_panel_fields(packet: dict[str, Any], fallback_state: str, fallback_timer: int) -> tuple[str, int]:
+    """Extract display fields from protocol-v1 envelope or legacy flat payload."""
+
+    # Preferred schema: protocol envelope + nested state body.
+    if (
+        packet.get("v") == PROTOCOL_VERSION
+        and type(packet.get("seq")) is int
+        and type(packet.get("ts_wall_ns")) is int
+        and isinstance(packet.get("state"), dict)
+    ):
+        state_body = packet["state"]
+        stage_raw = state_body.get("stage") or state_body.get("active_stage") or fallback_state
+        stage = str(stage_raw)
+        timer_raw = state_body.get("countdown_s", fallback_timer)
+        timer = int(timer_raw) if isinstance(timer_raw, (int, float)) else fallback_timer
+        return stage, timer
+
+    # Temporary migration fallback: older dummy sender schema.
+    stage = str(packet.get("game_state", fallback_state))
+    timer_raw = packet.get("timer_s", fallback_timer)
+    timer = int(timer_raw) if isinstance(timer_raw, (int, float)) else fallback_timer
+    return stage, timer
 
 
 def main() -> None:
@@ -91,8 +124,7 @@ def main() -> None:
 
         packet = read_latest(sock)
         if packet is not None:
-            game_state = str(packet.get("game_state", game_state))
-            timer_s = int(packet.get("timer_s", timer_s))
+            game_state, timer_s = extract_panel_fields(packet, game_state, timer_s)
             last_rx = time.monotonic()
 
         stale = (time.monotonic() - last_rx) > 1.5 if last_rx else True
