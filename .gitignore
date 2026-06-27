@@ -1,3 +1,4 @@
 rpi_app/assets/font/*.*
 .env
 *.pyc
+archive/*
