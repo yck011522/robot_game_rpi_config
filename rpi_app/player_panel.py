@@ -13,17 +13,27 @@ import argparse
 import json
 import socket
 import time
-from typing import Any
+from typing import Any, Literal
 
 import pygame
 
 
 PROTOCOL_VERSION = 1
+PI_PANEL_SIZE = (480, 1920)  # Native portrait panel size used by each Raspberry Pi display.
+WINDOW_MODE = Literal["auto", "fullscreen", "windowed"]
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line options that select the display, UDP socket, and panel labels."""
+
     parser = argparse.ArgumentParser(description="Run a portrait player panel on a selected display.")
     parser.add_argument("--display", type=int, default=0, help="Pygame display index.")
+    parser.add_argument(
+        "--window-mode",
+        choices=("auto", "fullscreen", "windowed"),
+        default="auto",
+        help="Use fullscreen on the Pi panel in auto mode; otherwise open a 480x1920 window.",
+    )
     parser.add_argument("--role", default="left", help="Role label for diagnostics (left/right).")
     parser.add_argument("--team", default="A", help="Team label to render, e.g. A or B.")
     parser.add_argument("--joint", type=int, default=1, help="Joint number to render.")
@@ -34,12 +44,16 @@ def parse_args() -> argparse.Namespace:
 
 
 def mmss(total_seconds: int) -> str:
+    """Format a number of seconds as MM:SS for the timer display."""
+
     total_seconds = max(0, int(total_seconds))
     m, s = divmod(total_seconds, 60)
     return f"{m:02d}:{s:02d}"
 
 
 def read_latest(sock: socket.socket) -> dict[str, Any] | None:
+    """Drain all waiting UDP packets and return the newest valid JSON object."""
+
     latest: dict[str, Any] | None = None
     while True:
         try:
@@ -58,6 +72,30 @@ def read_latest(sock: socket.socket) -> dict[str, Any] | None:
             latest = payload
 
     return latest
+
+
+def choose_window_settings(
+    display: int,
+    window_mode: WINDOW_MODE,
+) -> tuple[tuple[int, int], int, str, tuple[int, int]]:
+    """Choose Pygame window size and flags for Raspberry Pi or development screens.
+
+    In auto mode, a selected desktop that is exactly 480x1920 is treated as the
+    Raspberry Pi panel and opened fullscreen. Any other desktop is treated as a
+    development machine and opened as a normal 480x1920 window.
+    """
+
+    desktop_sizes = pygame.display.get_desktop_sizes()
+    if display < 0 or display >= len(desktop_sizes):
+        raise ValueError(f"display index {display} is not available; detected displays: {desktop_sizes}")
+
+    desktop_size = desktop_sizes[display]  # Physical desktop size reported by Pygame for the selected display.
+    use_fullscreen = window_mode == "fullscreen" or (window_mode == "auto" and desktop_size == PI_PANEL_SIZE)
+
+    if use_fullscreen:
+        return (0, 0), pygame.FULLSCREEN, "fullscreen", desktop_size
+
+    return PI_PANEL_SIZE, 0, "windowed", desktop_size
 
 
 def extract_panel_fields(packet: dict[str, Any], fallback_state: str, fallback_timer: int) -> tuple[str, int]:
@@ -85,12 +123,17 @@ def extract_panel_fields(packet: dict[str, Any], fallback_state: str, fallback_t
 
 
 def main() -> None:
+    """Run the Pygame event loop, read UDP state, and redraw the player panel."""
+
     args = parse_args()
 
     pygame.init()
     pygame.font.init()
 
-    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN, display=args.display)
+    window_size, window_flags, mode_label, desktop_size = choose_window_settings(args.display, args.window_mode)
+    print(f"display={args.display} desktop={desktop_size} mode={mode_label} window={window_size}", flush=True)
+
+    screen = pygame.display.set_mode(window_size, window_flags, display=args.display)
     pygame.display.set_caption(f"Player Panel {args.role}")
     width, height = screen.get_size()
 
@@ -102,10 +145,12 @@ def main() -> None:
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    try:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-    except OSError:
-        pass
+    reuse_port = getattr(socket, "SO_REUSEPORT", None)  # Optional Linux socket flag that lets Pi processes share one UDP port.
+    if reuse_port is not None:
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, reuse_port, 1)
+        except OSError:
+            pass
     sock.bind((args.bind, args.port))
     sock.setblocking(False)
 
