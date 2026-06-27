@@ -4,6 +4,9 @@ This document defines the UDP game-state feed consumed by the Raspberry Pi
 player displays. It describes the protocol implemented by
 `src/core/display_protocol.py` and `src/apps/state_broadcaster/__main__.py`.
 
+> **Do not implement against `docs/NETWORK_PROTOCOL.md`.** That file describes
+> the retired legacy publisher. The envelope, port, state fields, and player
+> addressing in this document are the current contract.
 
 ## 1. Transport and endpoint
 
@@ -143,7 +146,7 @@ team
 |   |-- q_rad: array[number] (6 values)
 |   `-- status: object
 |-- haptic
-|   |-- dial_pos_rad, dial_deg, dial_vel_rad_s: array[number] (6 values)
+|   |-- dial_pos_rad, dial_deg, dial_robot_deg, dial_vel_rad_s: array[number] (6 values)
 |   |-- connected: array[boolean] (6 values)
 |   |-- board_loop_hz: array[number] (6 values)
 |   |-- tutorial_progress_pct: array[number] (6 values, nominally 0..100)
@@ -182,7 +185,10 @@ For player `aN` or `bN`, select team `a` or `b` and zero-based array index
 `N - 1`. For example, player `b4` uses `teams.b.robot.q_rad[3]`,
 `teams.b.haptic.dial_deg[3]`, and
 `teams.b.haptic.tutorial_progress_pct[3]`. Angles ending in `_rad` are radians;
-`dial_deg`, `_deg`, and `_pct` fields already carry the units in their names.
+`dial_deg`, `dial_robot_deg`, `_deg`, and `_pct` fields already carry the units
+in their names. `dial_deg` is the raw dial-space angle. `dial_robot_deg` is
+that same measured dial position mapped through the configured per-axis
+`gear_ratio`, so it reflects robot-space direction flips and scaling.
 
 Display-oriented interpretations:
 
@@ -209,9 +215,9 @@ The current installation mapping is:
 | `rpi5-11` | `192.168.0.11` | `a1`, `a2` | Team A indices 0, 1 |
 | `rpi5-12` | `192.168.0.12` | `a3`, `a4` | Team A indices 2, 3 |
 | `rpi5-13` | `192.168.0.13` | `a5`, `a6` | Team A indices 4, 5 |
-| `rpi5-21` | `192.168.0.21` | `b1`, `b2` | Team B indices 0, 1 |
-| `rpi5-22` | `192.168.0.22` | `b3`, `b4` | Team B indices 2, 3 |
-| `rpi5-23` | `192.168.0.23` | `b5`, `b6` | Team B indices 4, 5 |
+| `rpi5-14` | `192.168.0.14` | `b1`, `b2` | Team B indices 0, 1 |
+| `rpi5-15` | `192.168.0.15` | `b3`, `b4` | Team B indices 2, 3 |
+| `rpi5-16` | `192.168.0.16` | `b5`, `b6` | Team B indices 4, 5 |
 
 The YAML configuration is authoritative if this table and the installed
 wiring ever differ. The hostname lookup is case-insensitive. Each Pi is
@@ -397,15 +403,4 @@ subnet broadcast address while preserving the recorded stage timing.
 - State schema construction: `src/apps/game_controller/published_states.py`
 - Endpoint and Pi mapping: `config/device_ports_and_addr.yaml`
 - Regression tests: `tests/test_display_broadcast.py`
-
-## 9. This repo's local test scripts
-
-In `robot_game_rpi_config`, the local test sender/receiver now follow the same
-v1 envelope shape in this document:
-
-- `scripts/dummy_broadcast.py` sends `{"v","seq","ts_wall_ns","state"}` with
-    a minimal synthetic `state` body.
-- `rpi_app/player_panel.py` reads stage/timer from nested `state` fields.
-- During transition, `player_panel.py` still accepts the old flat payload
-    (`game_state`, `timer_s`) as a temporary fallback.
 

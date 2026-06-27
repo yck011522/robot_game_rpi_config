@@ -42,7 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--joint", type=int, default=1, help="Joint number to render.")
     parser.add_argument("--bind", default="0.0.0.0", help="UDP bind address.")
     parser.add_argument("--port", type=int, default=49200, help="UDP port.")
-    parser.add_argument("--fps", type=int, default=30, help="Render FPS cap.")
+    parser.add_argument("--fps", type=int, default=60, help="Render FPS cap.")
     return parser.parse_args()
 
 

@@ -42,6 +42,19 @@ def remap(value: float, in_min: float, in_max: float, out_min: float, out_max: f
     return lerp(out_min, out_max, (value - in_min) / (in_max - in_min))
 
 
+def format_signed(value: float, digits: int = 3) -> str:
+    """Format a number as a sign character plus a zero-padded integer magnitude.
+
+    For example 180 -> ``+180``, -5 -> ``-005``, 0 -> ``+000``. The result is a
+    fixed ``digits + 1`` characters wide, which keeps a monospace label visually
+    stable as the value changes.
+    """
+
+    rounded = int(round(value))
+    sign = "-" if rounded < 0 else "+"
+    return f"{sign}{abs(rounded):0{digits}d}"
+
+
 def resolve(value: Any, context: "Context") -> float:
     """Resolve an animatable property to a number.
 
@@ -147,9 +160,20 @@ class Context:
         return None
 
     def dial_deg(self) -> float | None:
-        """Return this player's haptic dial position in degrees, or ``None``."""
+        """Return this player's raw haptic dial position in degrees, or ``None``."""
 
         value = self._team_joint("haptic", "dial_deg")
+        return float(value) if isinstance(value, (int, float)) else None
+
+    def dial_robot_deg(self) -> float | None:
+        """Return the dial position mapped to robot-space degrees, or ``None``.
+
+        This is ``haptic.dial_robot_deg``: the measured dial position already run
+        through the configured per-axis gear ratio, so it reflects robot-space
+        direction and scaling and needs no further unit conversion.
+        """
+
+        value = self._team_joint("haptic", "dial_robot_deg")
         return float(value) if isinstance(value, (int, float)) else None
 
     def tutorial_progress_pct(self) -> float | None:
