@@ -188,6 +188,17 @@ class Context:
         value = self._team_joint("robot", "q_rad")
         return math.degrees(value) if isinstance(value, (int, float)) else None
 
+    def prox_zone(self) -> dict | None:
+        """Return this player's joint collision-zone object, or ``None``.
+
+        This is ``collision.prox_zones[index]``: the display-ready proximity
+        bands for the joint this panel renders. Returns ``None`` when the field
+        is missing so a draw function can fall back to the neutral background.
+        """
+
+        zone = self._team_joint("collision", "prox_zones")
+        return zone if isinstance(zone, dict) else None
+
 
 class TextElement:
     """A single line of text with animatable position and opacity.
@@ -257,6 +268,29 @@ def load_image(path: Any) -> pygame.Surface:
         surface = pygame.image.load(key).convert_alpha()
         _IMAGE_CACHE[key] = surface
     return surface
+
+
+def blit_image_slice(
+    surface: pygame.Surface,
+    image_path: Any,
+    y_top: float,
+    y_bottom: float,
+) -> None:
+    """Overlay the horizontal band ``[y_top, y_bottom)`` of a full-page image.
+
+    The source rows are blitted at the same ``y`` on ``surface``, so a band cut
+    from one full-screen layer (for example the green or red collision page)
+    drops cleanly over an identically sized base layer. The range is clamped to
+    the image and rounded to whole pixels; an empty band draws nothing.
+    """
+
+    image = load_image(image_path)
+    width, height = image.get_size()
+    top = max(0, min(height, int(round(y_top))))
+    bottom = max(0, min(height, int(round(y_bottom))))
+    if bottom <= top:
+        return
+    surface.blit(image.subsurface(pygame.Rect(0, top, width, bottom - top)), (0, top))
 
 
 class ImageElement:

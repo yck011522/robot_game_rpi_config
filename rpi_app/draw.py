@@ -18,7 +18,15 @@ from pathlib import Path
 
 import pygame
 
-from canvas_elements import Context, ImageElement, OdometerElement, TextElement, lerp, remap
+from canvas_elements import (
+    Context,
+    ImageElement,
+    OdometerElement,
+    TextElement,
+    blit_image_slice,
+    lerp,
+    remap,
+)
 
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
@@ -127,7 +135,9 @@ def draw_tutorial(surface: pygame.Surface, fonts: Fonts, context: Context) -> No
     _draw_placeholder(surface, fonts, context, "TUTORIAL")
 
 # Gameplay-state assets and layout (top-left anchored coordinates).
-PLAY_BG_IMAGE = ASSETS_DIR / "GameBgGrey.png"
+PLAY_BG_IMAGE = ASSETS_DIR / "GameBgGrey.png"  # Base lane; shows untested zones.
+PLAY_BG_GREEN = ASSETS_DIR / "GameBgGreen.png"  # Collision-free band source.
+PLAY_BG_RED = ASSETS_DIR / "GameBgRed.png"  # Blocked band source.
 LEFT_BUG_IMAGE = ASSETS_DIR / "LeftBug.png"
 RIGHT_BUG_IMAGE = ASSETS_DIR / "RightBug.png"
 SIGN_SCROLL_IMAGE = ASSETS_DIR / "SignScroll.png"
@@ -138,6 +148,14 @@ BUG_Y_TOP = 568  # Top-left y when the joint is at +180 deg.
 BUG_Y_BOTTOM = 1720  # Top-left y when the joint is at -180 deg.
 PLAY_ANGLE_TOP = 180.0
 PLAY_ANGLE_BOTTOM = -180.0
+
+# Absolute-degree scale printed on the background art: +180 deg sits at y=596 and
+# the scale is 1152 px tall, so -180 deg sits at y=1748. Used to place the green
+# and red collision bands, which are given in absolute joint degrees.
+PROX_SCALE_TOP_Y = 596.0
+PROX_SCALE_SPAN_PX = 1152.0
+PROX_SCALE_TOP_DEG = 180.0
+PROX_SCALE_RANGE_DEG = 360.0
 
 # Scrolling readouts inside each bug; offsets are from the bug's top-left corner.
 # These hold their own animation state, so build them once and reuse them.
@@ -162,10 +180,48 @@ def draw_play(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
     """
 
     ImageElement(PLAY_BG_IMAGE, 0, 0).draw(surface, context)
+    _draw_collision_zones(surface, context)
 
     _draw_play_bug(surface, context, LEFT_BUG_IMAGE, LEFT_BUG_X, context.dial_robot_deg(), LEFT_ODOMETER)
     _draw_play_bug(surface, context, RIGHT_BUG_IMAGE, RIGHT_BUG_X, context.robot_deg(), RIGHT_ODOMETER)
     _draw_play_timer(surface, context)
+
+
+def _prox_deg_to_y(deg: float) -> float:
+    """Map an absolute joint angle to its y on the background's degree scale."""
+
+    y = PROX_SCALE_TOP_Y + (PROX_SCALE_TOP_DEG - deg) / PROX_SCALE_RANGE_DEG * PROX_SCALE_SPAN_PX
+    bottom = PROX_SCALE_TOP_Y + PROX_SCALE_SPAN_PX
+    return min(bottom, max(PROX_SCALE_TOP_Y, y))
+
+
+def _draw_collision_zones(surface: pygame.Surface, context: Context) -> None:
+    """Overlay this joint's green free band and red blocked bands on the lane.
+
+    Bands come from ``collision.prox_zones`` in absolute joint degrees. The grey
+    base already shows the neutral "untested" lane, so an invalid or missing zone
+    draws nothing. The green band spans ``free_min_deg``..``free_max_deg``; a red
+    band is added above and/or below only when the matching ``blocked_*`` edge is
+    present, leaving everything past the tested window as the neutral base.
+    """
+
+    zone = context.prox_zone()
+    if not zone or not zone.get("valid"):
+        return
+    free_min = zone.get("free_min_deg")
+    free_max = zone.get("free_max_deg")
+    if not isinstance(free_min, (int, float)) or not isinstance(free_max, (int, float)):
+        return
+
+    blit_image_slice(surface, PLAY_BG_GREEN, _prox_deg_to_y(free_max), _prox_deg_to_y(free_min))
+
+    blocked_above = zone.get("blocked_above_till_deg")
+    if isinstance(blocked_above, (int, float)):
+        blit_image_slice(surface, PLAY_BG_RED, _prox_deg_to_y(blocked_above), _prox_deg_to_y(free_max))
+
+    blocked_below = zone.get("blocked_below_till_deg")
+    if isinstance(blocked_below, (int, float)):
+        blit_image_slice(surface, PLAY_BG_RED, _prox_deg_to_y(free_min), _prox_deg_to_y(blocked_below))
 
 
 def _draw_play_bug(
