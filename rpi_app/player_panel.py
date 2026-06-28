@@ -26,6 +26,7 @@ from canvas_elements import Context
 
 PROTOCOL_VERSION = 1
 PI_PANEL_SIZE = (480, 1920)  # Native portrait panel size used by each Raspberry Pi display.
+CURSOR_HIDE_DELAY_S = 3.0  # Hide the mouse pointer after this many seconds without movement.
 WINDOW_MODE = Literal["auto", "fullscreen", "windowed"]
 DEVICES_CSV = Path(__file__).resolve().parent / "devices.csv"  # Deployed alongside the app.
 
@@ -336,6 +337,12 @@ def main() -> None:
     pygame.display.set_caption(f"Player Panel {args.role}")
     _width, height = screen.get_size()
 
+    # Kiosk display: keep the pointer off the panel. Start hidden, then reveal it
+    # briefly whenever the mouse moves and hide again once it has been idle.
+    pygame.mouse.set_visible(False)
+    cursor_visible = False
+    last_pointer_move = 0.0
+
     fonts = draw.load_fonts(height)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -364,6 +371,15 @@ def main() -> None:
                 running = False
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 running = False
+            elif event.type == pygame.MOUSEMOTION:
+                last_pointer_move = time.monotonic()
+                if not cursor_visible:
+                    pygame.mouse.set_visible(True)
+                    cursor_visible = True
+
+        if cursor_visible and (time.monotonic() - last_pointer_move) > CURSOR_HIDE_DELAY_S:
+            pygame.mouse.set_visible(False)
+            cursor_visible = False
 
         packet = read_latest(sock)
         if packet is not None:
