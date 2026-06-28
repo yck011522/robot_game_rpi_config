@@ -13,6 +13,7 @@ deliberately separate so that changing one state never affects another.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import pygame
@@ -144,9 +145,7 @@ TIMER_BOX_W = 410  # Rendered text width is fitted to within this many pixels.
 TIMER_BOX_H = 175  # Rendered text height is fitted to within this many pixels.
 TIMER_BOX_TOP = 280  # Top y of the rectangle; it is centered horizontally.
 TIMER_COLOR = pygame.Color("#ffffff")
-
-_TIMER_FONT_CACHE: dict[int, pygame.font.Font] = {}  # Roboto by point size.
-_TIMER_SIZE_CACHE: dict[str, int] = {}  # Fitted point size per timer string.
+TIMER_FONT_SIZE = 149  # Static size determined from the current 480x1920 panel.
 
 
 def draw_play(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
@@ -194,39 +193,14 @@ def _draw_play_bug(
     ).draw(surface, context)
 
 
-def _timer_font(size: int) -> pygame.font.Font:
-    """Return a cached bundled-Roboto font at ``size`` points."""
+@lru_cache(maxsize=1)
+def _timer_font() -> pygame.font.Font:
+    """Return the fixed Roboto timer font."""
 
-    font = _TIMER_FONT_CACHE.get(size)
-    if font is None:
-        try:
-            font = pygame.font.Font(str(FONT_PATH), size)
-        except FileNotFoundError:
-            font = pygame.font.Font(None, size)
-        _TIMER_FONT_CACHE[size] = font
-    return font
-
-
-def _fitted_timer_font(text: str) -> pygame.font.Font:
-    """Largest cached Roboto font whose rendered ``text`` fits the timer box.
-
-    The chosen point size is cached per string, so the binary search only runs
-    when the displayed value changes (about once per second).
-    """
-
-    size = _TIMER_SIZE_CACHE.get(text)
-    if size is None:
-        low, high, size = 8, 400, 8
-        while low <= high:
-            mid = (low + high) // 2
-            width, height = _timer_font(mid).size(text)
-            if width <= TIMER_BOX_W and height <= TIMER_BOX_H:
-                size = mid
-                low = mid + 1
-            else:
-                high = mid - 1
-        _TIMER_SIZE_CACHE[text] = size
-    return _timer_font(size)
+    try:
+        return pygame.font.Font(str(FONT_PATH), TIMER_FONT_SIZE)
+    except FileNotFoundError:
+        return pygame.font.Font(None, TIMER_FONT_SIZE)
 
 
 def _draw_play_timer(surface: pygame.Surface, context: Context) -> None:
@@ -244,7 +218,7 @@ def _draw_play_timer(surface: pygame.Surface, context: Context) -> None:
         text,
         surface.get_width() / 2,
         TIMER_BOX_TOP + TIMER_BOX_H / 2,
-        _fitted_timer_font(text),
+        _timer_font(),
         color=TIMER_COLOR,
         align="center",
         valign="center",
