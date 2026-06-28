@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pygame
 
-from canvas_elements import Context, ImageElement, TextElement, format_signed, lerp, remap
+from canvas_elements import Context, ImageElement, OdometerElement, TextElement, lerp, remap
 
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
@@ -130,15 +130,19 @@ def draw_tutorial(surface: pygame.Surface, fonts: Fonts, context: Context) -> No
 PLAY_BG_IMAGE = ASSETS_DIR / "GameBgGrey.png"
 LEFT_BUG_IMAGE = ASSETS_DIR / "LeftBug.png"
 RIGHT_BUG_IMAGE = ASSETS_DIR / "RightBug.png"
+SIGN_SCROLL_IMAGE = ASSETS_DIR / "SignScroll.png"
+NUMBER_SCROLL_IMAGE = ASSETS_DIR / "NumberScroll.png"
 LEFT_BUG_X = 118  # Left bug tracks the player's haptic dial.
 RIGHT_BUG_X = 245  # Right bug tracks the robot's current joint angle.
-BUG_W = 120
-BUG_H = 54
 BUG_Y_TOP = 568  # Top-left y when the joint is at +180 deg.
 BUG_Y_BOTTOM = 1720  # Top-left y when the joint is at -180 deg.
 PLAY_ANGLE_TOP = 180.0
 PLAY_ANGLE_BOTTOM = -180.0
-PLAY_LABEL_COLOR = pygame.Color("#ffffff")
+
+# Scrolling readouts inside each bug; offsets are from the bug's top-left corner.
+# These hold their own animation state, so build them once and reuse them.
+LEFT_ODOMETER = OdometerElement(SIGN_SCROLL_IMAGE, NUMBER_SCROLL_IMAGE, base_dx=22, base_dy=8)
+RIGHT_ODOMETER = OdometerElement(SIGN_SCROLL_IMAGE, NUMBER_SCROLL_IMAGE, base_dx=8, base_dy=8)
 
 # Countdown timer readout, sized to fill a fixed rectangle (top-left anchored).
 TIMER_BOX_W = 410  # Rendered text width is fitted to within this many pixels.
@@ -159,38 +163,31 @@ def draw_play(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
 
     ImageElement(PLAY_BG_IMAGE, 0, 0).draw(surface, context)
 
-    _draw_play_bug(surface, fonts, context, LEFT_BUG_IMAGE, LEFT_BUG_X, context.dial_robot_deg())
-    _draw_play_bug(surface, fonts, context, RIGHT_BUG_IMAGE, RIGHT_BUG_X, context.robot_deg())
+    _draw_play_bug(surface, context, LEFT_BUG_IMAGE, LEFT_BUG_X, context.dial_robot_deg(), LEFT_ODOMETER)
+    _draw_play_bug(surface, context, RIGHT_BUG_IMAGE, RIGHT_BUG_X, context.robot_deg(), RIGHT_ODOMETER)
     _draw_play_timer(surface, context)
 
 
 def _draw_play_bug(
     surface: pygame.Surface,
-    fonts: Fonts,
     context: Context,
     image_path: Path,
     x: int,
     angle_deg: float | None,
+    odometer: OdometerElement,
 ) -> None:
-    """Place a bug image and its centered four-character label by a joint angle.
+    """Place a bug image and its scrolling four-cell readout by a joint angle.
 
     ``angle_deg`` maps +180 deg to the top of the travel and -180 deg to the
-    bottom. The bug is skipped for this frame when its angle is unavailable.
+    bottom. The bug is skipped for this frame when its angle is unavailable. The
+    odometer reads the same signed angle and follows the bug's moving top-left.
     """
 
     if angle_deg is None:
         return
     y = remap(angle_deg, PLAY_ANGLE_BOTTOM, PLAY_ANGLE_TOP, BUG_Y_BOTTOM, BUG_Y_TOP)
     ImageElement(image_path, x, y).draw(surface, context)
-    TextElement(
-        format_signed(angle_deg),
-        x + BUG_W / 2,
-        y + BUG_H / 2,
-        fonts.mono,
-        color=PLAY_LABEL_COLOR,
-        align="center",
-        valign="center",
-    ).draw(surface, context)
+    odometer.draw(surface, x, y, angle_deg, context.elapsed_s)
 
 
 @lru_cache(maxsize=1)

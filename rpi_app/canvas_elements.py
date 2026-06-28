@@ -308,3 +308,184 @@ class ImageElement:
         elif self.valign == "bottom":
             y -= height
         surface.blit(image, (int(x), int(y)))
+
+
+# Scrolling-digit geometry, shared by the sign and number strips.
+DIGIT_W = 23  # Width of one cropped cell, in pixels.
+DIGIT_H = 40  # Height of one cropped cell, in pixels.
+STRIP_PERIOD = 10 * DIGIT_H  # Pixels of travel before the number strip repeats.
+
+# Source columns of the visible glyphs inside each 32px-wide strip.
+SIGN_SRC_X = 4
+NUMBER_SRC_X = 4
+
+# Crop-top positions that vertically centre each sign glyph in its cell.
+SIGN_PLUS_TOP = 11.5  # ``+`` cell (shown for a value of zero or above).
+SIGN_MINUS_TOP = 51.5  # ``-`` cell, one cell (40px) below the plus.
+
+
+def _number_crop_top(value: float) -> float:
+    """Crop-top (px) into the number strip for a continuous digit ``value``.
+
+    The strip reads 0, 1, ... 9, 0 down its eleven cells, so cell ``c`` shows
+    digit ``c % 10``. Digit ``d`` therefore lives at crop-top
+    ``(d mod 10) * DIGIT_H``; a fractional value lands between two cells, and the
+    trailing duplicate ``0`` cell makes the 9->0 seam continuous.
+    """
+
+    return (value % 10.0) * DIGIT_H
+
+
+def _blit_strip_window(
+    surface: pygame.Surface,
+    image_path: Any,
+    src_x: int,
+    dest_x: float,
+    dest_y: float,
+    crop_top: float,
+    alpha: int = 255,
+) -> None:
+    """Blit one ``DIGIT_W`` x ``DIGIT_H`` window of a vertical strip.
+
+    ``crop_top`` is clamped so the window stays inside the strip, then rounded to
+    the nearest pixel (positions are interpolated, but blits are integer-aligned).
+    """
+
+    strip = load_image(image_path)
+    top = int(round(crop_top))
+    top = max(0, min(strip.get_height() - DIGIT_H, top))
+    window = strip.subsurface(pygame.Rect(src_x, top, DIGIT_W, DIGIT_H))
+    if alpha < 255:
+        window = window.copy()
+        window.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)
+    surface.blit(window, (int(dest_x), int(dest_y)))
+
+
+class _TimedScroller:
+    """Roll a 1-D position to a new target over a fixed duration, then hold.
+
+    This is the snap behaviour shared by the sign cell and the two left-hand
+    number cells: the value they show jumps between discrete stops, but the crop
+    position eases to the new stop instead of cutting. Re-targeting mid-roll just
+    restarts the ease from wherever the position currently is.
+    """
+
+    def __init__(self, duration: float = 0.2) -> None:
+        self.duration = duration
+        self._pos: float | None = None
+        self._from = 0.0
+        self._target = 0.0
+        self._start = 0.0
+
+    @property
+    def position(self) -> float | None:
+        """The current crop position, or ``None`` before the first update."""
+
+        return self._pos
+
+    def update(self, target: float, now: float) -> float:
+        """Advance toward ``target`` using the wall clock ``now`` (seconds)."""
+
+        if self._pos is None:
+            self._pos = self._from = self._target = target
+            self._start = now
+            return self._pos
+        if target != self._target:
+            self._from = self._pos
+            self._target = target
+            self._start = now
+        if self.duration <= 0:
+            self._pos = self._target
+        else:
+            fraction = (now - self._start) / self.duration
+            fraction = 0.0 if fraction < 0 else 1.0 if fraction > 1 else fraction
+            self._pos = lerp(self._from, self._target, fraction)
+        return self._pos
+
+
+class OdometerElement:
+    """A four-cell scrolling readout: a sign cell plus three number cells.
+
+    It shows a signed angle as a sign and three magnitude digits (hundreds,
+    tens, units). The two left digits snap to whole numbers but roll there with a
+    short animation; the units digit scrolls continuously like a car odometer, so
+    it can sit between two digits to show a fraction. The sign rolls between
+    ``+`` and ``-`` (``+`` at exactly zero) with the same short animation.
+
+    The element keeps its own animation state between frames, so create it once
+    and reuse it; do not rebuild it every frame like the stateless image and text
+    elements. ``draw`` is given the bug's top-left origin, the signed value, and
+    the current wall-clock seconds that drive the snap animations.
+    """
+
+    def __init__(
+        self,
+        sign_image: Any,
+        number_image: Any,
+        base_dx: int,
+        base_dy: int,
+        spacing: int = DIGIT_W,
+        duration: float = 0.2,
+    ) -> None:
+        self.sign_image = str(sign_image)
+        self.number_image = str(number_image)
+        self.base_dx = base_dx
+        self.base_dy = base_dy
+        self.spacing = spacing
+        self._sign = _TimedScroller(duration)
+        self._hundreds = _TimedScroller(duration)
+        self._tens = _TimedScroller(duration)
+
+    def draw(
+        self,
+        surface: pygame.Surface,
+        origin_x: float,
+        origin_y: float,
+        value: float,
+        now: float,
+        alpha: int = 255,
+    ) -> None:
+        """Draw the four cells for ``value`` at the bug's ``origin`` top-left."""
+
+        magnitude = abs(value)
+        sign_top = self._sign.update(
+            SIGN_MINUS_TOP if value < 0 else SIGN_PLUS_TOP, now
+        )
+        hundreds_top = self._snap(self._hundreds, math.floor(magnitude / 100.0) % 10, now)
+        tens_top = self._snap(self._tens, math.floor(magnitude / 10.0) % 10, now)
+        units_top = _number_crop_top(magnitude % 10.0)
+
+        x = origin_x + self.base_dx
+        y = origin_y + self.base_dy
+        _blit_strip_window(surface, self.sign_image, SIGN_SRC_X, x, y, sign_top, alpha)
+        _blit_strip_window(
+            surface, self.number_image, NUMBER_SRC_X, x + self.spacing, y,
+            hundreds_top % STRIP_PERIOD, alpha,
+        )
+        _blit_strip_window(
+            surface, self.number_image, NUMBER_SRC_X, x + 2 * self.spacing, y,
+            tens_top % STRIP_PERIOD, alpha,
+        )
+        _blit_strip_window(
+            surface, self.number_image, NUMBER_SRC_X, x + 3 * self.spacing, y,
+            units_top, alpha,
+        )
+
+    @staticmethod
+    def _snap(scroller: _TimedScroller, digit: int, now: float) -> float:
+        """Roll ``scroller`` to ``digit`` along the shortest path around the strip.
+
+        The number strip is periodic every ``STRIP_PERIOD`` pixels, so the target
+        is shifted by whole periods to stay within half a turn of the current
+        position. That keeps a 9->0 carry rolling forward by one cell instead of
+        unwinding the long way.
+        """
+
+        target = _number_crop_top(float(digit))
+        current = scroller.position
+        if current is not None:
+            while target - current > STRIP_PERIOD / 2:
+                target -= STRIP_PERIOD
+            while target - current < -STRIP_PERIOD / 2:
+                target += STRIP_PERIOD
+        return scroller.update(target, now)
