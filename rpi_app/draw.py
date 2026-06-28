@@ -150,6 +150,11 @@ BUG_Y_BOTTOM = 1720  # Top-left y when the joint is at -180 deg.
 PLAY_ANGLE_TOP = 180.0
 PLAY_ANGLE_BOTTOM = -180.0
 
+# Top banner naming this panel's joint, chosen by joint number (index + 1).
+PLAY_BANNER_IMAGES = {joint: ASSETS_DIR / f"Joint{joint}.png" for joint in range(1, 7)}
+PLAY_BANNER_X = 23
+PLAY_BANNER_Y = 71
+
 # Absolute-degree scale printed on the background art: +180 deg sits at y=596 and
 # the scale is 1152 px tall, so -180 deg sits at y=1748. Used to place the green
 # and red collision bands, which are given in absolute joint degrees.
@@ -194,12 +199,26 @@ def draw_play(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
     """
 
     ImageElement(PLAY_BG_IMAGE, 0, 0).draw(surface, context)
+    _draw_play_banner(surface, context)
     _draw_collision_zones(surface, context)
     _draw_speed_bar(surface, context)
 
     _draw_play_bug(surface, context, LEFT_BUG_IMAGE, LEFT_BUG_X, context.dial_robot_deg(), LEFT_ODOMETER)
     _draw_play_bug(surface, context, RIGHT_BUG_IMAGE, RIGHT_BUG_X, context.robot_deg(), RIGHT_ODOMETER)
     _draw_play_timer(surface, context)
+
+
+def _draw_play_banner(surface: pygame.Surface, context: Context) -> None:
+    """Draw the top banner naming this panel's joint.
+
+    The joint number is ``index + 1``; an out-of-range index (1..6 expected)
+    simply draws no banner rather than failing.
+    """
+
+    image = PLAY_BANNER_IMAGES.get(context.index + 1)
+    if image is None:
+        return
+    ImageElement(image, PLAY_BANNER_X, PLAY_BANNER_Y).draw(surface, context)
 
 
 def _prox_deg_to_y(deg: float) -> float:
