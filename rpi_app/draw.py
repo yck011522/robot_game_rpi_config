@@ -23,6 +23,7 @@ from canvas_elements import (
     ImageElement,
     OdometerElement,
     TextElement,
+    blit_image_left,
     blit_image_slice,
     lerp,
     remap,
@@ -162,10 +163,23 @@ PROX_SCALE_RANGE_DEG = 360.0
 LEFT_ODOMETER = OdometerElement(SIGN_SCROLL_IMAGE, NUMBER_SCROLL_IMAGE, base_dx=22, base_dy=8)
 RIGHT_ODOMETER = OdometerElement(SIGN_SCROLL_IMAGE, NUMBER_SCROLL_IMAGE, base_dx=8, base_dy=8)
 
+# Speed-override bar: a left-to-right fill over a grey track printed on the
+# background. ``collision.final_scalar`` (0..1) sets the fill width. At or above
+# the threshold the green "OK" art is used; below it, the red "bad" art. The
+# coloured fill is cropped from the left; the label is overlaid at full size.
+SPEED_BAR_GREEN = ASSETS_DIR / "ColliGreen.png"
+SPEED_BAR_RED = ASSETS_DIR / "ColliRed.png"
+SPEED_OK_TEXT = ASSETS_DIR / "ColliOKText.png"
+SPEED_BAD_TEXT = ASSETS_DIR / "ColliBadText.png"
+SPEED_BAR_X = 43  # Top-left of the track on the background.
+SPEED_BAR_Y = 396
+SPEED_BAR_W = 394  # Full bar width at 100%; ColliGreen/ColliRed are 394x76.
+SPEED_BAR_THRESHOLD = 0.35  # Below this fraction, use the red / bad artwork.
+
 # Countdown timer readout, sized to fill a fixed rectangle (top-left anchored).
 TIMER_BOX_W = 410  # Rendered text width is fitted to within this many pixels.
 TIMER_BOX_H = 175  # Rendered text height is fitted to within this many pixels.
-TIMER_BOX_TOP = 280  # Top y of the rectangle; it is centered horizontally.
+TIMER_CENTER_Y = 265  # Vertical center of the readout in the new background box.
 TIMER_COLOR = pygame.Color("#ffffff")
 TIMER_FONT_SIZE = 149  # Static size determined from the current 480x1920 panel.
 
@@ -181,6 +195,7 @@ def draw_play(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
 
     ImageElement(PLAY_BG_IMAGE, 0, 0).draw(surface, context)
     _draw_collision_zones(surface, context)
+    _draw_speed_bar(surface, context)
 
     _draw_play_bug(surface, context, LEFT_BUG_IMAGE, LEFT_BUG_X, context.dial_robot_deg(), LEFT_ODOMETER)
     _draw_play_bug(surface, context, RIGHT_BUG_IMAGE, RIGHT_BUG_X, context.robot_deg(), RIGHT_ODOMETER)
@@ -222,6 +237,27 @@ def _draw_collision_zones(surface: pygame.Surface, context: Context) -> None:
     blocked_below = zone.get("blocked_below_till_deg")
     if isinstance(blocked_below, (int, float)):
         blit_image_slice(surface, PLAY_BG_RED, _prox_deg_to_y(free_min), _prox_deg_to_y(blocked_below))
+
+
+def _draw_speed_bar(surface: pygame.Surface, context: Context) -> None:
+    """Draw the combined speed-override fill and its OK/bad label.
+
+    ``collision.final_scalar`` (0..1) sets how far the coloured bar fills from the
+    left over the grey track printed on the background. The fill and the overlaid
+    label use the green / OK art at or above ``SPEED_BAR_THRESHOLD`` and the red /
+    bad art below it. Nothing is drawn when the scalar is unavailable.
+    """
+
+    scalar = context.speed_scalar()
+    if scalar is None:
+        return
+    scalar = max(0.0, min(1.0, scalar))
+    ok = scalar >= SPEED_BAR_THRESHOLD
+    fill_image = SPEED_BAR_GREEN if ok else SPEED_BAR_RED
+    text_image = SPEED_OK_TEXT if ok else SPEED_BAD_TEXT
+
+    blit_image_left(surface, fill_image, SPEED_BAR_X, SPEED_BAR_Y, SPEED_BAR_W * scalar)
+    ImageElement(text_image, SPEED_BAR_X, SPEED_BAR_Y).draw(surface, context)
 
 
 def _draw_play_bug(
@@ -270,7 +306,7 @@ def _draw_play_timer(surface: pygame.Surface, context: Context) -> None:
     TextElement(
         text,
         surface.get_width() / 2,
-        TIMER_BOX_TOP + TIMER_BOX_H / 2,
+        TIMER_CENTER_Y,
         _timer_font(),
         color=TIMER_COLOR,
         align="center",

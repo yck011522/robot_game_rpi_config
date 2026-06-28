@@ -199,6 +199,20 @@ class Context:
         zone = self._team_joint("collision", "prox_zones")
         return zone if isinstance(zone, dict) else None
 
+    def speed_scalar(self) -> float | None:
+        """Return the team's combined speed fraction, or ``None``.
+
+        This is ``collision.final_scalar``: one team-level number (not per-joint)
+        nominally in ``0.0..1.0`` where ``1.0`` means full speed. It already
+        folds the path and proximity collision checks into a single value.
+        """
+
+        try:
+            value = self.state["teams"][self.team]["collision"]["final_scalar"]  # type: ignore[index]
+        except (TypeError, KeyError):
+            return None
+        return float(value) if isinstance(value, (int, float)) else None
+
 
 class TextElement:
     """A single line of text with animatable position and opacity.
@@ -291,6 +305,29 @@ def blit_image_slice(
     if bottom <= top:
         return
     surface.blit(image.subsurface(pygame.Rect(0, top, width, bottom - top)), (0, top))
+
+
+def blit_image_left(
+    surface: pygame.Surface,
+    image_path: Any,
+    dest_x: float,
+    dest_y: float,
+    width: float,
+) -> None:
+    """Blit the leftmost ``width`` columns of an image at ``(dest_x, dest_y)``.
+
+    This drives a left-to-right progress fill: a coloured bar image is revealed
+    from its left edge by ``width`` pixels over a track drawn on the background.
+    ``width`` is clamped to the image and rounded to whole pixels; a non-positive
+    width draws nothing.
+    """
+
+    image = load_image(image_path)
+    img_w, img_h = image.get_size()
+    w = max(0, min(img_w, int(round(width))))
+    if w <= 0:
+        return
+    surface.blit(image.subsurface(pygame.Rect(0, 0, w, img_h)), (int(dest_x), int(dest_y)))
 
 
 class ImageElement:
