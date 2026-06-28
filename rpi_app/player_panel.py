@@ -10,9 +10,11 @@ During migration this receiver also accepts the old flat payload format.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import socket
 import time
+from pathlib import Path
 from typing import Any, Literal
 
 import pygame
@@ -24,6 +26,7 @@ from canvas_elements import Context
 PROTOCOL_VERSION = 1
 PI_PANEL_SIZE = (480, 1920)  # Native portrait panel size used by each Raspberry Pi display.
 WINDOW_MODE = Literal["auto", "fullscreen", "windowed"]
+DEVICES_CSV = Path(__file__).resolve().parent / "devices.csv"  # Deployed alongside the app.
 
 
 def parse_args() -> argparse.Namespace:
@@ -37,9 +40,18 @@ def parse_args() -> argparse.Namespace:
         default="auto",
         help="Use fullscreen on the Pi panel in auto mode; otherwise open a 480x1920 window.",
     )
-    parser.add_argument("--role", default="left", help="Role label for diagnostics (left/right).")
-    parser.add_argument("--team", default="A", help="Team label to render, e.g. A or B.")
-    parser.add_argument("--joint", type=int, default=1, help="Joint number to render.")
+    parser.add_argument("--role", default="left", help="Which panel this process drives (left/right).")
+    parser.add_argument(
+        "--team",
+        default=None,
+        help="Team to render (A/B). Defaults to the hostname-mapped team; set to override in development.",
+    )
+    parser.add_argument(
+        "--joint",
+        type=int,
+        default=None,
+        help="Joint number to render. Defaults to the hostname-mapped joint; set to override in development.",
+    )
     parser.add_argument("--bind", default="0.0.0.0", help="UDP bind address.")
     parser.add_argument("--port", type=int, default=49200, help="UDP port.")
     parser.add_argument("--fps", type=int, default=60, help="Render FPS cap.")
@@ -119,7 +131,76 @@ def extract_state(packet: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def load_panel_map() -> dict[str, dict[str, str]]:
+    """Read the hostname -> left/right panel table deployed next to the app.
+
+    Returns an empty map when ``devices.csv`` is missing, so a development
+    machine simply falls back to defaults or explicit CLI overrides.
+    """
+
+    mapping: dict[str, dict[str, str]] = {}
+    if not DEVICES_CSV.exists():
+        return mapping
+    with DEVICES_CSV.open("r", encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f):
+            host = (row.get("hostname") or "").strip().lower()
+            if host:
+                mapping[host] = {
+                    "left": (row.get("left_panel") or "").strip(),
+                    "right": (row.get("right_panel") or "").strip(),
+                }
+    return mapping
+
+
+def parse_panel(panel: str) -> tuple[str, int] | None:
+    """Split a panel label such as ``a1`` into ``("a", 1)``, or ``None``."""
+
+    panel = panel.strip().lower()
+    if len(panel) < 2 or not panel[1:].isdigit():
+        return None
+    return panel[0], int(panel[1:])
+
+
+def detect_panel(role: str) -> tuple[str, int] | None:
+    """Resolve this Pi's ``(team, joint)`` for ``role`` from its own hostname.
+
+    The OS hostname (case-insensitive, domain stripped) is matched against
+    ``devices.csv``; ``role`` selects the left or right panel column. Returns
+    ``None`` when the host is unknown or its panel label is malformed.
+    """
+
+    try:
+        host = socket.gethostname().split(".")[0].strip().lower()
+    except OSError:
+        return None
+    entry = load_panel_map().get(host)
+    if entry is None:
+        return None
+    panel = entry.get("right" if role == "right" else "left", "")
+    return parse_panel(panel) if panel else None
+
+
+def resolve_identity(role: str, team_arg: str | None, joint_arg: int | None) -> tuple[str, int]:
+    """Combine hostname auto-detection with optional CLI overrides.
+
+    Auto-detection from the hostname provides the production defaults; an
+    explicitly supplied ``--team`` or ``--joint`` overrides the matching field
+    for development. Anything still unresolved falls back to team ``a`` joint 1.
+    """
+
+    detected = detect_panel(role)
+    det_team, det_joint = detected if detected else (None, None)
+
+    team = team_arg if team_arg is not None else det_team
+    joint = joint_arg if joint_arg is not None else det_joint
+
+    team_char = (str(team).strip().lower() or "a")[:1] if team is not None else "a"
+    joint_num = max(1, int(joint)) if joint is not None else 1
+    return team_char, joint_num
+
+
 def main() -> None:
+
     """Run the Pygame event loop, read UDP state, and redraw the player panel."""
 
     args = parse_args()
@@ -147,8 +228,9 @@ def main() -> None:
     sock.bind((args.bind, args.port))
     sock.setblocking(False)
 
-    team = (str(args.team).strip().lower() or "a")[:1]
-    index = max(0, args.joint - 1)
+    team, joint = resolve_identity(args.role, args.team, args.joint)
+    index = max(0, joint - 1)
+    print(f"role={args.role} team={team} joint={joint} index={index}", flush=True)
     state_body: dict[str, Any] | None = None
     last_rx = 0.0
     start_mono = time.monotonic()

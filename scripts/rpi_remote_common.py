@@ -10,7 +10,7 @@ from typing import Iterable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEVICES_CSV = REPO_ROOT / "devices.csv"
+DEVICES_CSV = REPO_ROOT / "rpi_app" / "devices.csv"
 ENV_FILE = REPO_ROOT / ".env"
 
 

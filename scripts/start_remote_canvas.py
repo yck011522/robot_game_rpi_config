@@ -22,7 +22,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def start_one(ssh, remote_dir: str, wayland_display: str, role: str, display_idx: int, team: str, joint: int) -> None:
+def start_one(ssh, remote_dir: str, wayland_display: str, role: str, display_idx: int) -> None:
     pid_file = f"{remote_dir}/run/canvas_{role}.pid"
     log_file = f"{remote_dir}/logs/canvas_{role}.log"
     app = f"{remote_dir}/rpi_app/player_panel.py"
@@ -37,7 +37,7 @@ def start_one(ssh, remote_dir: str, wayland_display: str, role: str, display_idx
             "  if ps -p $old_pid >/dev/null 2>&1; then kill $old_pid || true; fi; "
             "fi; "
             f"nohup env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY={shlex.quote(wayland_display)} "
-            f"python3 {shlex.quote(app)} --role {shlex.quote(role)} --display {display_idx} --team {shlex.quote(team)} --joint {joint} "
+            f"python3 {shlex.quote(app)} --role {shlex.quote(role)} --display {display_idx} "
             f"> {shlex.quote(log_file)} 2>&1 < /dev/null & "
             f"echo $! > {shlex.quote(pid_file)}; "
             "sleep 0.4; "
@@ -65,8 +65,6 @@ def main() -> None:
             wayland_display=args.wayland_display,
             role="left",
             display_idx=0,
-            team="A",
-            joint=1,
         )
         start_one(
             ssh,
@@ -74,8 +72,6 @@ def main() -> None:
             wayland_display=args.wayland_display,
             role="right",
             display_idx=1,
-            team="A",
-            joint=2,
         )
 
         print("Started two player-panel processes.")

@@ -202,13 +202,13 @@ Do not create these files until development resumes in VS Code. This is the prop
 ```text
 robot_game_rpi_config/
 ├── README.md
-├── devices.csv
 ├── scripts/
 │   ├── prepare_card.py
 │   ├── deploy_app.py              # future
 │   └── install_services.sh        # future
 ├── rpi_app/                       # future
 │   ├── __init__.py
+│   ├── devices.csv                # hostname -> team/joint panel map
 │   ├── main.py
 │   ├── config.py
 │   ├── udp_listener.py

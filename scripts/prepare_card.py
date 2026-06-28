@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEVICES_CSV = REPO_ROOT / "devices.csv"
+DEVICES_CSV = REPO_ROOT / "rpi_app" / "devices.csv"
 USB_CURRENT_LINE = "usb_max_current_enable=1"
 
 

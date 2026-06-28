@@ -1,63 +1,183 @@
 #!/usr/bin/env python3
-"""Deploy the minimal Raspberry Pi app files over SSH/SFTP."""
+"""Stop, deploy, and restart the Raspberry Pi app over SSH/SFTP.
+
+Each selected device is fully serviced in one pass: running canvas processes are
+stopped, ``rpi_app`` is uploaded, and the player-panel processes are started
+again. Devices are always taken from ``devices.csv`` by index and serviced
+concurrently, so a single run can refresh the whole fleet.
+"""
 
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
-from rpi_remote_common import REPO_ROOT, connect_ssh, resolve_credentials, resolve_target, run_remote, upload_tree
+from rpi_remote_common import (
+    REPO_ROOT,
+    Target,
+    connect_ssh,
+    load_devices,
+    resolve_credentials,
+    run_remote,
+    upload_tree,
+)
+from start_remote_canvas import start_one
+from stop_remote_canvas import stop_one
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Deploy rpi_app to a Raspberry Pi over SSH.")
-    parser.add_argument("--device", default="11", help="Device selector. Supports index (1) or hostname suffix (11).")
-    parser.add_argument("--host", help="Override SSH host/IP directly.")
-    parser.add_argument("--ip", help="Override IP directly.")
+    parser = argparse.ArgumentParser(description="Stop, deploy, and restart rpi_app on Raspberry Pis over SSH.")
+    parser.add_argument(
+        "--devices",
+        nargs="+",
+        default=None,
+        metavar="INDEX",
+        help="devices.csv indices to deploy to, e.g. 1 2 3 or 1-6. Defaults to all devices.",
+    )
     parser.add_argument("--username", help="SSH username. Defaults to PI_USERNAME in .env.")
     parser.add_argument("--password", help="SSH password. Defaults to PI_PASSWORD in .env.")
     parser.add_argument("--port", type=int, default=22, help="SSH port.")
     parser.add_argument("--remote-dir", default="/home/pi/robot_game", help="Remote deployment root path.")
+    parser.add_argument("--wayland-display", default="wayland-0", help="Remote WAYLAND_DISPLAY value.")
     return parser.parse_args()
+
+
+def parse_indices(tokens: list[str] | None, all_indices: list[int]) -> list[int]:
+    """Resolve the ``--devices`` tokens to an ordered, de-duplicated index list.
+
+    Each token is either a single index (``3``) or an inclusive range
+    (``1-6``). ``None`` selects every device found in ``devices.csv``.
+    """
+
+    if not tokens:
+        return all_indices
+
+    resolved: list[int] = []
+    for token in tokens:
+        if "-" in token:
+            start_text, end_text = token.split("-", 1)
+            start, end = int(start_text), int(end_text)
+            resolved.extend(range(start, end + 1) if start <= end else range(start, end - 1, -1))
+        else:
+            resolved.append(int(token))
+
+    seen: set[int] = set()
+    ordered: list[int] = []
+    for index in resolved:
+        if index not in seen:
+            seen.add(index)
+            ordered.append(index)
+    return ordered
+
+
+def resolve_targets(indices: list[int]) -> list[tuple[int, Target]]:
+    """Map device indices to ``Target`` rows from ``devices.csv``."""
+
+    rows = load_devices()
+    by_index = {int(row["index"]): row for row in rows}
+
+    targets: list[tuple[int, Target]] = []
+    for index in indices:
+        row = by_index.get(index)
+        if row is None:
+            valid = ", ".join(f"{r['index']}:{r['hostname']}" for r in rows)
+            raise ValueError(f"Unknown device index {index}. Known devices: {valid}")
+        ip = row.get("ip")
+        targets.append((index, Target(host=ip or row["hostname"], ip=ip)))
+    return targets
+
+
+def deploy_one(
+    index: int,
+    target: Target,
+    username: str,
+    password: str,
+    port: int,
+    remote_dir: str,
+    wayland_display: str,
+) -> tuple[bool, list[str]]:
+    """Stop, upload, and restart the app on a single device.
+
+    Returns whether the pass succeeded along with the buffered log lines, so the
+    caller can print each device's output as one uninterrupted block.
+    """
+
+    lines: list[str] = []
+
+    def log(message: str) -> None:
+        lines.append(f"[{index}:{target.host}] {message}")
+
+    try:
+        ssh = connect_ssh(target.host, username, password, port=port)
+    except Exception as exc:  # noqa: BLE001 - report and keep other devices going.
+        log(f"FAILED to connect: {exc}")
+        return False, lines
+
+    try:
+        log("Stopping canvas processes...")
+        stop_one(ssh, remote_dir=remote_dir, role="left")
+        stop_one(ssh, remote_dir=remote_dir, role="right")
+
+        log("Uploading rpi_app...")
+        run_remote(ssh, f"mkdir -p {remote_dir}/logs {remote_dir}/run")
+        with ssh.open_sftp() as sftp:
+            upload_tree(sftp, local_root=REPO_ROOT, remote_root=remote_dir, include=[REPO_ROOT / "rpi_app"])
+        log("Upload complete.")
+
+        log("Starting player-panel processes...")
+        start_one(ssh, remote_dir=remote_dir, wayland_display=wayland_display, role="left", display_idx=0)
+        start_one(ssh, remote_dir=remote_dir, wayland_display=wayland_display, role="right", display_idx=1)
+        log("Started. Deploy complete.")
+        return True, lines
+    except Exception as exc:  # noqa: BLE001 - report and keep other devices going.
+        log(f"FAILED: {exc}")
+        return False, lines
+    finally:
+        ssh.close()
 
 
 def main() -> None:
     args = parse_args()
 
-    target = resolve_target(device=args.device, host=args.host, ip=args.ip)
     username, password = resolve_credentials(username=args.username, password=args.password)
+    all_indices = sorted(int(row["index"]) for row in load_devices())
+    indices = parse_indices(args.devices, all_indices)
+    targets = resolve_targets(indices)
 
-    local_root = REPO_ROOT
-    include_paths = [local_root / "rpi_app"]
+    print(f"Deploying to {len(targets)} device(s): " + ", ".join(f"{i}:{t.host}" for i, t in targets))
 
-    print(f"Connecting to {target.host}:{args.port} as {username}...")
-    ssh = connect_ssh(target.host, username, password, port=args.port)
-    try:
-        run_remote(ssh, f"mkdir -p {args.remote_dir}/logs {args.remote_dir}/run")
+    print_lock = Lock()
+    results: dict[int, bool] = {}
 
-        with ssh.open_sftp() as sftp:
-            upload_tree(sftp, local_root=local_root, remote_root=args.remote_dir, include=include_paths)
+    with ThreadPoolExecutor(max_workers=len(targets)) as executor:
+        futures = {
+            executor.submit(
+                deploy_one,
+                index,
+                target,
+                username,
+                password,
+                args.port,
+                args.remote_dir,
+                args.wayland_display,
+            ): index
+            for index, target in targets
+        }
 
-        print("Upload complete.")
+        for future in as_completed(futures):
+            index = futures[future]
+            ok, lines = future.result()
+            results[index] = ok
+            with print_lock:
+                print("\n".join(lines))
 
-        code, out, err = run_remote(
-            ssh,
-            f"python3 -c \"import pygame; print(pygame.__version__)\"",
-            check=False,
-        )
-        if code == 0:
-            print(f"Remote pygame version: {out.strip()}")
-        else:
-            print("Remote pygame import check failed. Install pygame on the Pi if needed.")
-            if err.strip():
-                print(err.strip())
-
-        print(f"Deployed app to: {args.remote_dir}")
-        print(f"Target host:     {target.host}")
-        if target.ip:
-            print(f"Target ip:       {target.ip}")
-    finally:
-        ssh.close()
+    succeeded = sorted(i for i, ok in results.items() if ok)
+    failed = sorted(i for i, ok in results.items() if not ok)
+    print()
+    print(f"Done. Succeeded: {succeeded or 'none'}. Failed: {failed or 'none'}.")
+    if failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
