@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import csv
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -12,6 +13,14 @@ from typing import Iterable
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEVICES_CSV = REPO_ROOT / "rpi_app" / "devices.csv"
 ENV_FILE = REPO_ROOT / ".env"
+
+# Each canvas role maps to a fixed pygame display index on the Pi.
+ROLE_DISPLAY = {"left": 0, "right": 1}
+
+# Each canvas role maps to a fixed physical HDMI connector. player_panel.py
+# selects the matching display by this name (stable across reboots), and the
+# display index above is only a fallback if the name cannot be matched.
+ROLE_OUTPUT = {"left": "HDMI-A-1", "right": "HDMI-A-2"}
 
 
 @dataclass(frozen=True)
@@ -112,6 +121,28 @@ def run_remote(ssh, command: str, check: bool = True) -> tuple[int, str, str]:
     if check and code != 0:
         raise RuntimeError(f"Remote command failed ({code}): {command}\nSTDOUT:\n{out}\nSTDERR:\n{err}")
     return code, out, err
+
+
+def service_name(role: str) -> str:
+    """Return the systemd user-unit name for a canvas role (e.g. ``left``)."""
+
+    return f"robot-game-{role}.service"
+
+
+def user_systemctl(ssh, args: str, check: bool = True) -> tuple[int, str, str]:
+    """Run ``systemctl --user <args>`` for the login user over SSH.
+
+    Non-login SSH sessions do not inherit the user manager's bus address, so we
+    export ``XDG_RUNTIME_DIR``/``DBUS_SESSION_BUS_ADDRESS`` (derived from the
+    current uid) before invoking ``systemctl --user``.
+    """
+
+    prefix = (
+        'export XDG_RUNTIME_DIR="/run/user/$(id -u)"; '
+        'export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"; '
+    )
+    cmd = "bash -lc " + shlex.quote(prefix + f"systemctl --user {args}")
+    return run_remote(ssh, cmd, check=check)
 
 
 def mkdirs_remote_sftp(sftp, remote_dir: str) -> None:

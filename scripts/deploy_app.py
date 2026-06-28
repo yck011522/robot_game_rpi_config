@@ -22,8 +22,8 @@ from rpi_remote_common import (
     run_remote,
     upload_tree,
 )
-from start_remote_canvas import start_one
-from stop_remote_canvas import stop_one
+from start_remote_service import start_one
+from stop_remote_service import stop_one
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,7 +39,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--password", help="SSH password. Defaults to PI_PASSWORD in .env.")
     parser.add_argument("--port", type=int, default=22, help="SSH port.")
     parser.add_argument("--remote-dir", default="/home/pi/robot_game", help="Remote deployment root path.")
-    parser.add_argument("--wayland-display", default="wayland-0", help="Remote WAYLAND_DISPLAY value.")
     return parser.parse_args()
 
 
@@ -95,7 +94,6 @@ def deploy_one(
     password: str,
     port: int,
     remote_dir: str,
-    wayland_display: str,
 ) -> tuple[bool, list[str]]:
     """Stop, upload, and restart the app on a single device.
 
@@ -115,9 +113,9 @@ def deploy_one(
         return False, lines
 
     try:
-        log("Stopping canvas processes...")
-        stop_one(ssh, remote_dir=remote_dir, role="left")
-        stop_one(ssh, remote_dir=remote_dir, role="right")
+        log("Stopping canvas services...")
+        stop_one(ssh, role="left")
+        stop_one(ssh, role="right")
 
         log("Uploading rpi_app...")
         run_remote(ssh, f"mkdir -p {remote_dir}/logs {remote_dir}/run")
@@ -125,9 +123,9 @@ def deploy_one(
             upload_tree(sftp, local_root=REPO_ROOT, remote_root=remote_dir, include=[REPO_ROOT / "rpi_app"])
         log("Upload complete.")
 
-        log("Starting player-panel processes...")
-        start_one(ssh, remote_dir=remote_dir, wayland_display=wayland_display, role="left", display_idx=0)
-        start_one(ssh, remote_dir=remote_dir, wayland_display=wayland_display, role="right", display_idx=1)
+        log("Starting canvas services...")
+        start_one(ssh, role="left")
+        start_one(ssh, role="right")
         log("Started. Deploy complete.")
         return True, lines
     except Exception as exc:  # noqa: BLE001 - report and keep other devices going.
@@ -160,7 +158,6 @@ def main() -> None:
                 password,
                 args.port,
                 args.remote_dir,
-                args.wayland_display,
             ): index
             for index, target in targets
         }

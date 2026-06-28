@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import socket
 import time
 from pathlib import Path
@@ -33,7 +34,26 @@ def parse_args() -> argparse.Namespace:
     """Parse command-line options that select the display, UDP socket, and panel labels."""
 
     parser = argparse.ArgumentParser(description="Run a portrait player panel on a selected display.")
-    parser.add_argument("--display", type=int, default=0, help="Pygame display index.")
+    parser.add_argument("--display", type=int, default=0, help="Pygame display index (fallback when --output is unset/unmatched).")
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Physical connector to render on, e.g. HDMI-A-1. Selected via SDL display name; "
+        "stable across reboots regardless of pygame display-index ordering.",
+    )
+    parser.add_argument(
+        "--require-outputs",
+        default=None,
+        help="Comma-separated connector names (e.g. HDMI-A-1,HDMI-A-2) that must all be present "
+        "before opening the window. Prevents the boot-time race where panels launch before the "
+        "compositor has brought up every output.",
+    )
+    parser.add_argument(
+        "--ready-timeout",
+        type=float,
+        default=90.0,
+        help="Max seconds to wait for --require-outputs before proceeding anyway.",
+    )
     parser.add_argument(
         "--window-mode",
         choices=("auto", "fullscreen", "windowed"),
@@ -79,6 +99,95 @@ def read_latest(sock: socket.socket) -> dict[str, Any] | None:
             latest = payload
 
     return latest
+
+
+def _sdl_display_names() -> list[str]:
+    """Return SDL's per-display name strings (which embed the connector name).
+
+    Uses ctypes against the already-loaded SDL2 library, since pygame does not
+    expose ``SDL_GetDisplayName``. On platforms/builds where SDL2 cannot be
+    loaded (e.g. a Windows dev box), an empty list is returned so callers fall
+    back to the numeric display index.
+    """
+
+    import ctypes
+
+    sdl = None
+    for lib in ("libSDL2-2.0.so.0", "libSDL2-2.0.so", "libSDL2.so", "SDL2.dll"):
+        try:
+            sdl = ctypes.CDLL(lib)
+            break
+        except OSError:
+            continue
+    if sdl is None:
+        return []
+
+    sdl.SDL_GetDisplayName.restype = ctypes.c_char_p
+    names: list[str] = []
+    for i in range(sdl.SDL_GetNumVideoDisplays()):
+        raw = sdl.SDL_GetDisplayName(i)
+        names.append(raw.decode() if isinstance(raw, bytes) else (raw or ""))
+    return names
+
+
+def resolve_display_index(output: str | None, fallback: int) -> int:
+    """Map a physical connector name (e.g. ``HDMI-A-1``) to a pygame display index.
+
+    SDL reports names like ``'___ ZeroMOD 0x645 (HDMI-A-1)'``; we match ``output``
+    case-insensitively against those. This keeps selection tied to the physical
+    HDMI port rather than SDL's index ordering, which can differ between boots
+    when both panels share an identical EDID. Falls back to ``fallback`` when no
+    output is requested or no name matches.
+    """
+
+    if not output:
+        return fallback
+
+    names = _sdl_display_names()
+    target = output.strip().lower()
+    for index, name in enumerate(names):
+        if target in name.lower():
+            return index
+
+    print(f"output {output!r} not found in {names}; falling back to display {fallback}", flush=True)
+    return fallback
+
+
+def wait_for_outputs(required: list[str], timeout_s: float, settle_s: float = 2.0, poll_s: float = 1.0) -> None:
+    """Block until every connector in ``required`` is present and stable.
+
+    At cold boot the panels can launch before the Wayland compositor has brought
+    up both outputs; creating fullscreen surfaces during that window lets SDL
+    assign them to the wrong monitor. Waiting until the full display topology is
+    present (and still present after a short settle) reproduces the stable
+    desktop state under which placement is reliable.
+
+    The video subsystem is re-initialised each poll so SDL re-scans outputs
+    rather than reusing a stale display list. On timeout we return anyway and let
+    selection fall back to the numeric index.
+    """
+
+    if not required:
+        return
+
+    def all_present() -> bool:
+        names = _sdl_display_names()
+        return all(any(req.lower() in name.lower() for name in names) for req in required)
+
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        pygame.display.quit()
+        pygame.display.init()
+        if all_present():
+            time.sleep(settle_s)
+            pygame.display.quit()
+            pygame.display.init()
+            if all_present():
+                print(f"outputs ready: {required}", flush=True)
+                return
+        time.sleep(poll_s)
+
+    print(f"timed out waiting for outputs {required}; proceeding with current displays", flush=True)
 
 
 def choose_window_settings(
@@ -205,13 +314,25 @@ def main() -> None:
 
     args = parse_args()
 
+    # SDL minimizes a fullscreen window when it loses keyboard focus by default.
+    # On this dual-panel setup that hides the unfocused panel (and at boot leaves
+    # only the panel that won focus visible), so keep both surfaces mapped.
+    os.environ.setdefault("SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS", "0")
+
     pygame.init()
     pygame.font.init()
 
-    window_size, window_flags, mode_label, desktop_size = choose_window_settings(args.display, args.window_mode)
-    print(f"display={args.display} desktop={desktop_size} mode={mode_label} window={window_size}", flush=True)
+    required_outputs = [token.strip() for token in (args.require_outputs or "").split(",") if token.strip()]
+    wait_for_outputs(required_outputs, timeout_s=args.ready_timeout)
 
-    screen = pygame.display.set_mode(window_size, window_flags, display=args.display)
+    display_idx = resolve_display_index(args.output, args.display)
+    window_size, window_flags, mode_label, desktop_size = choose_window_settings(display_idx, args.window_mode)
+    print(
+        f"display={display_idx} output={args.output} desktop={desktop_size} mode={mode_label} window={window_size}",
+        flush=True,
+    )
+
+    screen = pygame.display.set_mode(window_size, window_flags, display=display_idx)
     pygame.display.set_caption(f"Player Panel {args.role}")
     _width, height = screen.get_size()
 

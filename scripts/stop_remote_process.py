@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Stop remote pygame canvas processes over SSH."""
+"""Stop the directly-launched player-panel processes over SSH (no systemd).
+
+Counterpart to ``start_remote_process.py``: kills the panels by the PID files it
+wrote, then sweeps any stragglers by command-line pattern.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +14,7 @@ from rpi_remote_common import connect_ssh, resolve_credentials, resolve_target, 
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Stop canvas processes on a Raspberry Pi over SSH.")
+    parser = argparse.ArgumentParser(description="Stop directly-launched player-panel processes on a Raspberry Pi.")
     parser.add_argument("--device", default="11", help="Device selector. Supports index (1) or hostname suffix (11).")
     parser.add_argument("--host", help="Override SSH host/IP directly.")
     parser.add_argument("--ip", help="Override IP directly.")
@@ -22,29 +26,28 @@ def parse_args() -> argparse.Namespace:
 
 
 def stop_one(ssh, remote_dir: str, role: str) -> None:
-    pid_file = f"{remote_dir}/run/canvas_{role}.pid"
-    pattern_canvas = shlex.quote(f"simple_canvas.py --role {role}")
-    pattern_panel = shlex.quote(f"player_panel.py --role {role}")
+    """Stop the panel for ``role`` via its PID file, then by name as a fallback."""
 
-    cmd = (
-        "bash -lc "
-        + shlex.quote(
-            "set +e; "
-            f"if [ -f {shlex.quote(pid_file)} ]; then "
-            f"  pid=$(cat {shlex.quote(pid_file)}); "
-            "  if ps -p $pid >/dev/null 2>&1; then "
-            "    kill $pid; "
-            "    sleep 0.4; "
-            "    if ps -p $pid >/dev/null 2>&1; then kill -9 $pid; fi; "
-            "  fi; "
-            f"  rm -f {shlex.quote(pid_file)}; "
-            "fi; "
-            f"pkill -f {pattern_canvas} >/dev/null 2>&1 || true; "
-            f"pkill -f {pattern_panel} >/dev/null 2>&1 || true"
-        )
+    pid_file = f"{remote_dir}/run/canvas_{role}.pid"
+    # The leading [p] character class keeps this pattern from matching the SSH
+    # shell that is running pkill (whose own argv contains the pattern text).
+    pattern = shlex.quote(f"[p]layer_panel.py --role {role}")
+
+    script = (
+        "set +e; "
+        f"if [ -f {shlex.quote(pid_file)} ]; then "
+        f"  pid=$(cat {shlex.quote(pid_file)}); "
+        "  if ps -p $pid >/dev/null 2>&1; then "
+        "    kill $pid; "
+        "    sleep 0.4; "
+        "    if ps -p $pid >/dev/null 2>&1; then kill -9 $pid; fi; "
+        "  fi; "
+        f"  rm -f {shlex.quote(pid_file)}; "
+        "fi; "
+        f"pkill -f {pattern} >/dev/null 2>&1 || true"
     )
 
-    run_remote(ssh, cmd, check=False)
+    run_remote(ssh, "bash -lc " + shlex.quote(script), check=False)
 
 
 def main() -> None:
@@ -59,7 +62,7 @@ def main() -> None:
     try:
         stop_one(ssh, remote_dir=args.remote_dir, role="left")
         stop_one(ssh, remote_dir=args.remote_dir, role="right")
-        print("Stop command sent for left and right canvas processes.")
+        print("Stopped player-panel processes (left, right).")
     finally:
         ssh.close()
 
