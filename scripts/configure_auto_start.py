@@ -34,6 +34,11 @@ from rpi_remote_common import (
 
 RESTART_DELAY_S = 2
 
+# Stagger the two panels at boot so they don't open fullscreen at the same
+# instant (which is when the dual-output focus/placement race shows up) and give
+# the compositor a few seconds to settle first. Left goes 5s, right 6s.
+ROLE_START_DELAY_S = {"left": 5, "right": 6}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -70,10 +75,14 @@ def build_unit(
     fallback index if the connector name cannot be matched. ``--require-outputs``
     makes the panel wait for every connector to come up before opening its
     window, avoiding the boot-time race that mis-assigns fullscreen surfaces.
+
+    A per-role ``ExecStartPre`` sleep (``ROLE_START_DELAY_S``) staggers the two
+    panels so they don't open fullscreen simultaneously at boot.
     """
 
     app = f"{remote_dir}/rpi_app/player_panel.py"
     require = ",".join(ROLE_OUTPUT[r] for r in ROLE_DISPLAY)
+    start_delay = ROLE_START_DELAY_S[role]
     return (
         "[Unit]\n"
         f"Description=Robot game canvas ({role})\n"
@@ -87,6 +96,7 @@ def build_unit(
         "Environment=SDL_VIDEODRIVER=wayland\n"
         "Environment=SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS=0\n"
         f"WorkingDirectory={remote_dir}/rpi_app\n"
+        f"ExecStartPre=/bin/sleep {start_delay}\n"
         f"ExecStart={python_bin} {app} --role {role} --output {output} "
         f"--require-outputs {require} --display {display_idx}\n"
         "Restart=always\n"
