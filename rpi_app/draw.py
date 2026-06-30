@@ -15,12 +15,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Callable
 
 import pygame
-
 from canvas_elements import (
     Context,
     ImageElement,
+    Keyframes,
     OdometerElement,
     TextElement,
     blit_image_left,
@@ -152,12 +153,81 @@ def draw_idle(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
     ImageElement(SCROLL_ARROW_IMAGE, SCROLL_ARROW_X, _scroll_arrow_y).draw(surface, context)
 
 # Tutorial-state assets and layout (top-left anchored coordinates).
+TUTORIAL_PAGE1_IMAGE = ASSETS_DIR / "TutorialPage1.png"
+# Page 2 art is player-specific; index + 1 selects P1..P6.
+TUTORIAL_PAGE2_IMAGES = {n: ASSETS_DIR / f"TutorialPage2P{n}.png" for n in range(1, 7)}
+
+# Each of the eleven tutorial pages is anchored to a progress setpoint, one per
+# 10% increment.
+TUTORIAL_PAGE1_PCT = 0.0
+TUTORIAL_PAGE2_PCT = 10.0
+
+# Default symmetric fade-in / hold / fade-out envelope for tutorial page objects,
+# in progress-percent units around each object's setpoint. ``SOLID`` is the
+# half-width that stays fully opaque; ``EDGE`` is the half-width at which the
+# object has faded fully out. With the defaults an object fades in from
+# (setpoint - 4) to (setpoint - 1), holds solid across the setpoint, then fades
+# out from (setpoint + 1) to (setpoint + 4).
+TUTORIAL_FADE_SOLID_PCT = 1.0
+TUTORIAL_FADE_EDGE_PCT = 4.0
+
+
+def _tutorial_progress(context: Context) -> float:
+    """Tutorial progress percent for this player, defaulting to 0 when unknown."""
+
+    value = context.tutorial_progress_pct()
+    return value if value is not None else 0.0
+
+
+def fade_window(
+    setpoint: float,
+    solid: float = TUTORIAL_FADE_SOLID_PCT,
+    edge: float = TUTORIAL_FADE_EDGE_PCT,
+    driver: Callable[[Context], float] = _tutorial_progress,
+    peak: float = 255.0,
+) -> Keyframes:
+    """Build a symmetric fade-in / hold / fade-out opacity driver around ``setpoint``.
+
+    The returned ``Keyframes`` maps the driver value (tutorial progress percent by
+    default) to an alpha in ``0..peak``: zero at or below ``setpoint - edge``,
+    rising to ``peak`` by ``setpoint - solid``, holding ``peak`` until ``setpoint
+    + solid``, then falling back to zero by ``setpoint + edge``. The result plugs
+    straight into an element's ``alpha`` so the same envelope can later drive
+    position or other animatable properties.
+    """
+
+    return Keyframes(
+        driver,
+        [
+            (setpoint - edge, 0.0),
+            (setpoint - solid, peak),
+            (setpoint + solid, peak),
+            (setpoint + edge, 0.0),
+        ],
+    )
 
 
 def draw_tutorial(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
-    """Interactive tutorial state."""
+    """Interactive tutorial state: full-page pages that cross-fade by progress.
 
-    _draw_placeholder(surface, fonts, context, "TUTORIAL")
+    The game controller publishes this player's ``tutorial_progress_pct``; each
+    page is a full-page image anchored to a 10% setpoint and faded in/out by
+    ``fade_window`` so neighbouring pages briefly cross-fade as the player scrolls.
+    """
+
+    surface.fill(BLACK)
+    ImageElement(TUTORIAL_PAGE1_IMAGE, 0, 0, alpha=fade_window(TUTORIAL_PAGE1_PCT)).draw(surface, context)
+    ImageElement(
+        SCROLL_ARROW_IMAGE, SCROLL_ARROW_X, _scroll_arrow_y, alpha=fade_window(TUTORIAL_PAGE1_PCT)
+    ).draw(surface, context)
+
+    page2 = TUTORIAL_PAGE2_IMAGES.get(context.index + 1)
+    if page2 is not None:
+        ImageElement(page2, 0, 0, alpha=fade_window(TUTORIAL_PAGE2_PCT)).draw(surface, context)
+        ImageElement(
+            SCROLL_ARROW_IMAGE, SCROLL_ARROW_X, _scroll_arrow_y, alpha=fade_window(TUTORIAL_PAGE2_PCT)
+        ).draw(surface, context)
+
 
 # Gameplay-state assets and layout (top-left anchored coordinates).
 PLAY_BG_IMAGE = ASSETS_DIR / "GameBgGrey.png"  # Base lane; shows untested zones.
