@@ -2,7 +2,9 @@
 """Stop the directly-launched player-panel processes over SSH (no systemd).
 
 Counterpart to ``start_remote_process.py``: kills the panels by the PID files it
-wrote, then sweeps any stragglers by command-line pattern.
+wrote, then sweeps any stragglers by command-line pattern. Devices are taken
+from ``devices.csv`` by index and serviced concurrently, the same way
+``deploy_app.py`` works: with no ``--devices`` the whole fleet is stopped.
 """
 
 from __future__ import annotations
@@ -10,14 +12,23 @@ from __future__ import annotations
 import argparse
 import shlex
 
-from rpi_remote_common import connect_ssh, resolve_credentials, resolve_target, run_remote
+from rpi_remote_common import (
+    resolve_credentials,
+    run_on_devices,
+    run_remote,
+    select_targets,
+)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Stop directly-launched player-panel processes on a Raspberry Pi.")
-    parser.add_argument("--device", default="11", help="Device selector. Supports index (1) or hostname suffix (11).")
-    parser.add_argument("--host", help="Override SSH host/IP directly.")
-    parser.add_argument("--ip", help="Override IP directly.")
+    parser = argparse.ArgumentParser(description="Stop directly-launched player-panel processes on Raspberry Pis.")
+    parser.add_argument(
+        "--devices",
+        nargs="+",
+        default=None,
+        metavar="INDEX",
+        help="devices.csv indices to stop, e.g. 1 2 3 or 1-6. Defaults to all devices.",
+    )
     parser.add_argument("--username", help="SSH username. Defaults to PI_USERNAME in .env.")
     parser.add_argument("--password", help="SSH password. Defaults to PI_PASSWORD in .env.")
     parser.add_argument("--port", type=int, default=22, help="SSH port.")
@@ -53,18 +64,25 @@ def stop_one(ssh, remote_dir: str, role: str) -> None:
 def main() -> None:
     args = parse_args()
 
-    target = resolve_target(device=args.device, host=args.host, ip=args.ip)
     username, password = resolve_credentials(username=args.username, password=args.password)
+    targets = select_targets(args.devices)
 
-    print(f"Connecting to {target.host}:{args.port} as {username}...")
-    ssh = connect_ssh(target.host, username, password, port=args.port)
+    print(f"Stopping player-panel processes on {len(targets)} device(s): " + ", ".join(f"{i}:{t.host}" for i, t in targets))
 
-    try:
+    def worker(ssh, log) -> None:
+        log("Stopping player-panel processes...")
         stop_one(ssh, remote_dir=args.remote_dir, role="left")
         stop_one(ssh, remote_dir=args.remote_dir, role="right")
-        print("Stopped player-panel processes (left, right).")
-    finally:
-        ssh.close()
+        log("Stopped (left, right).")
+
+    run_on_devices(
+        targets,
+        worker,
+        username=username,
+        password=password,
+        port=args.port,
+        summary_label="Stop complete",
+    )
 
 
 if __name__ == "__main__":

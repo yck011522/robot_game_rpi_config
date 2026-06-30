@@ -18,7 +18,9 @@ from rpi_remote_common import (
     Target,
     connect_ssh,
     load_devices,
+    parse_indices,
     resolve_credentials,
+    resolve_targets,
     run_remote,
     upload_tree,
 )
@@ -40,51 +42,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=22, help="SSH port.")
     parser.add_argument("--remote-dir", default="/home/pi/robot_game", help="Remote deployment root path.")
     return parser.parse_args()
-
-
-def parse_indices(tokens: list[str] | None, all_indices: list[int]) -> list[int]:
-    """Resolve the ``--devices`` tokens to an ordered, de-duplicated index list.
-
-    Each token is either a single index (``3``) or an inclusive range
-    (``1-6``). ``None`` selects every device found in ``devices.csv``.
-    """
-
-    if not tokens:
-        return all_indices
-
-    resolved: list[int] = []
-    for token in tokens:
-        if "-" in token:
-            start_text, end_text = token.split("-", 1)
-            start, end = int(start_text), int(end_text)
-            resolved.extend(range(start, end + 1) if start <= end else range(start, end - 1, -1))
-        else:
-            resolved.append(int(token))
-
-    seen: set[int] = set()
-    ordered: list[int] = []
-    for index in resolved:
-        if index not in seen:
-            seen.add(index)
-            ordered.append(index)
-    return ordered
-
-
-def resolve_targets(indices: list[int]) -> list[tuple[int, Target]]:
-    """Map device indices to ``Target`` rows from ``devices.csv``."""
-
-    rows = load_devices()
-    by_index = {int(row["index"]): row for row in rows}
-
-    targets: list[tuple[int, Target]] = []
-    for index in indices:
-        row = by_index.get(index)
-        if row is None:
-            valid = ", ".join(f"{r['index']}:{r['hostname']}" for r in rows)
-            raise ValueError(f"Unknown device index {index}. Known devices: {valid}")
-        ip = row.get("ip")
-        targets.append((index, Target(host=ip or row["hostname"], ip=ip)))
-    return targets
 
 
 def deploy_one(

@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import csv
 import shlex
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from threading import Lock
+from typing import Callable, Iterable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -176,3 +178,132 @@ def upload_tree(sftp, local_root: Path, remote_root: str, include: Iterable[Path
         else:
             mkdirs_remote_sftp(sftp, str(Path(remote_path).parent).replace("\\", "/"))
             sftp.put(str(source), remote_path)
+
+
+def parse_indices(tokens: list[str] | None, all_indices: list[int]) -> list[int]:
+    """Resolve ``--devices`` tokens to an ordered, de-duplicated index list.
+
+    Each token is either a single index (``3``) or an inclusive range
+    (``1-6``). ``None`` selects every device found in ``devices.csv``.
+    """
+
+    if not tokens:
+        return all_indices
+
+    resolved: list[int] = []
+    for token in tokens:
+        if "-" in token:
+            start_text, end_text = token.split("-", 1)
+            start, end = int(start_text), int(end_text)
+            resolved.extend(range(start, end + 1) if start <= end else range(start, end - 1, -1))
+        else:
+            resolved.append(int(token))
+
+    seen: set[int] = set()
+    ordered: list[int] = []
+    for index in resolved:
+        if index not in seen:
+            seen.add(index)
+            ordered.append(index)
+    return ordered
+
+
+def resolve_targets(indices: list[int]) -> list[tuple[int, Target]]:
+    """Map device indices to ``Target`` rows from ``devices.csv``."""
+
+    rows = load_devices()
+    by_index = {int(row["index"]): row for row in rows}
+
+    targets: list[tuple[int, Target]] = []
+    for index in indices:
+        row = by_index.get(index)
+        if row is None:
+            valid = ", ".join(f"{r['index']}:{r['hostname']}" for r in rows)
+            raise ValueError(f"Unknown device index {index}. Known devices: {valid}")
+        ip = row.get("ip")
+        targets.append((index, Target(host=ip or row["hostname"], ip=ip)))
+    return targets
+
+
+def select_targets(tokens: list[str] | None) -> list[tuple[int, Target]]:
+    """Resolve ``--devices`` tokens straight to ``(index, Target)`` pairs.
+
+    With no tokens this selects every device in ``devices.csv``, mirroring the
+    "default to the whole fleet" behaviour of ``deploy_app.py``.
+    """
+
+    all_indices = sorted(int(row["index"]) for row in load_devices())
+    return resolve_targets(parse_indices(tokens, all_indices))
+
+
+def run_on_devices(
+    targets: list[tuple[int, Target]],
+    worker: Callable[[object, Callable[[str], None]], None],
+    *,
+    username: str,
+    password: str,
+    port: int = 22,
+    summary_label: str = "Done",
+) -> None:
+    """Run ``worker`` against each device concurrently and report a summary.
+
+    ``worker(ssh, log)`` performs the per-device action; it should call ``log``
+    for progress and raise on failure. Each device is connected, serviced, and
+    closed independently so one failure does not stop the others. Buffered log
+    lines are printed as one block per device. Exits with status 1 if any device
+    failed.
+    """
+
+    print_lock = Lock()
+    results: dict[int, bool] = {}
+
+    with ThreadPoolExecutor(max_workers=len(targets)) as executor:
+        futures = {
+            executor.submit(_run_one, index, target, worker, username, password, port): index
+            for index, target in targets
+        }
+
+        for future in as_completed(futures):
+            index = futures[future]
+            ok, lines = future.result()
+            results[index] = ok
+            with print_lock:
+                print("\n".join(lines))
+
+    succeeded = sorted(i for i, ok in results.items() if ok)
+    failed = sorted(i for i, ok in results.items() if not ok)
+    print()
+    print(f"{summary_label}. Succeeded: {succeeded or 'none'}. Failed: {failed or 'none'}.")
+    if failed:
+        raise SystemExit(1)
+
+
+def _run_one(
+    index: int,
+    target: Target,
+    worker: Callable[[object, Callable[[str], None]], None],
+    username: str,
+    password: str,
+    port: int,
+) -> tuple[bool, list[str]]:
+    """Connect to one device, run ``worker``, and return ``(ok, log_lines)``."""
+
+    lines: list[str] = []
+
+    def log(message: str) -> None:
+        lines.append(f"[{index}:{target.host}] {message}")
+
+    try:
+        ssh = connect_ssh(target.host, username, password, port=port)
+    except Exception as exc:  # noqa: BLE001 - report and keep other devices going.
+        log(f"FAILED to connect: {exc}")
+        return False, lines
+
+    try:
+        worker(ssh, log)
+        return True, lines
+    except Exception as exc:  # noqa: BLE001 - report and keep other devices going.
+        log(f"FAILED: {exc}")
+        return False, lines
+    finally:
+        ssh.close()

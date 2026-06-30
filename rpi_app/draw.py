@@ -110,21 +110,45 @@ SCROLL_ARROW_X = 26
 SCROLL_ARROW_Y_REST = 830
 SCROLL_ARROW_Y_END = 772
 
+# Idle-state assets. The idle screen content is a full-page image drawn over the
+# black background with no offset (top-left anchored at the panel origin).
+IDLE_SCREEN_IMAGE = ASSETS_DIR / "IdleScreenContent.png"
+
+# Daydreaming-state overlays. Both states reuse the full play scene and then draw
+# one of these full-page semi-transparent overlays at the panel origin.
+DAYDREAM_PLAYBACK_OVERLAY = ASSETS_DIR / "daydream_playback_overlay.png"
+DAYDREAM_REWIND_OVERLAY = ASSETS_DIR / "daydream_rewind_overlay.png"
+
 
 def draw_daydreaming(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
-    """Attract / screensaver state: white art on black, with a bobbing scroll hint."""
+    """Attract / screensaver playback: the full play scene with a playback overlay.
 
-    surface.fill(BLACK)
-    ImageElement(BEGIN_TEXT_IMAGE, *BEGIN_TEXT_POS).draw(surface, context)
+    The bugs track the robot's current position. A semi-transparent playback
+    overlay and the bobbing scroll hint encourage the player to grab the knob.
+    """
+
+    _draw_play_scene(surface, context)
+    ImageElement(DAYDREAM_PLAYBACK_OVERLAY, 0, 0).draw(surface, context)
     ImageElement(SCROLL_ARROW_IMAGE, SCROLL_ARROW_X, _scroll_arrow_y).draw(surface, context)
+
+
+def draw_daydream_interrupted(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
+    """Attract mode interrupted: the full play scene with a rewind overlay.
+
+    Identical to the daydreaming scene but with the rewind overlay and without the
+    scroll hint, since the robot is returning to the start.
+    """
+
+    _draw_play_scene(surface, context)
+    ImageElement(DAYDREAM_REWIND_OVERLAY, 0, 0).draw(surface, context)
 
 
 
 def draw_idle(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
-    """Waiting-for-player state."""
+    """Waiting-for-player state: full-page idle art with a bobbing scroll hint."""
 
     surface.fill(BLACK)
-    ImageElement(BEGIN_TEXT_IMAGE, *BEGIN_TEXT_POS).draw(surface, context)
+    ImageElement(IDLE_SCREEN_IMAGE, 0, 0).draw(surface, context)
     ImageElement(SCROLL_ARROW_IMAGE, SCROLL_ARROW_X, _scroll_arrow_y).draw(surface, context)
 
 # Tutorial-state assets and layout (top-left anchored coordinates).
@@ -196,6 +220,16 @@ def draw_play(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
     (``dial_robot_deg``, already gear-ratio mapped); the right bug follows the
     robot's current joint angle in degrees. The remaining seconds are shown in a
     large readout fitted to a fixed rectangle near the top.
+    """
+
+    _draw_play_scene(surface, context)
+
+
+def _draw_play_scene(surface: pygame.Surface, context: Context) -> None:
+    """Draw the shared play scene: background, banner, zones, bugs, and timer.
+
+    Used by ``draw_play`` and by the daydreaming states, which layer their own
+    overlays on top of this same scene.
     """
 
     ImageElement(PLAY_BG_IMAGE, 0, 0).draw(surface, context)
@@ -347,6 +381,7 @@ def draw_conclusion(surface: pygame.Surface, fonts: Fonts, context: Context) -> 
 
 _STATE_DRAW = {
     "daydreaming": draw_daydreaming,
+    "daydream_interrupted": draw_daydream_interrupted,
     "idle": draw_idle,
     "tutorial": draw_tutorial,
     "play": draw_play,

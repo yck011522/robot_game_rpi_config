@@ -9,7 +9,9 @@ useful for confirming whether per-output placement depends on the launch
 context.
 
 Stop the systemd services first (``stop_remote_service.py``), then use this to
-launch the panels, and ``stop_remote_process.py`` to stop them again.
+launch the panels, and ``stop_remote_process.py`` to stop them again. Devices
+are taken from ``devices.csv`` by index and serviced concurrently, the same way
+``deploy_app.py`` works: with no ``--devices`` the whole fleet is started.
 """
 
 from __future__ import annotations
@@ -21,18 +23,22 @@ import time
 from rpi_remote_common import (
     ROLE_DISPLAY,
     ROLE_OUTPUT,
-    connect_ssh,
     resolve_credentials,
-    resolve_target,
+    run_on_devices,
     run_remote,
+    select_targets,
 )
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Start player-panel processes directly on a Raspberry Pi over SSH.")
-    parser.add_argument("--device", default="11", help="Device selector. Supports index (1) or hostname suffix (11).")
-    parser.add_argument("--host", help="Override SSH host/IP directly.")
-    parser.add_argument("--ip", help="Override IP directly.")
+    parser = argparse.ArgumentParser(description="Start player-panel processes directly on Raspberry Pis over SSH.")
+    parser.add_argument(
+        "--devices",
+        nargs="+",
+        default=None,
+        metavar="INDEX",
+        help="devices.csv indices to start, e.g. 1 2 3 or 1-6. Defaults to all devices.",
+    )
     parser.add_argument("--username", help="SSH username. Defaults to PI_USERNAME in .env.")
     parser.add_argument("--password", help="SSH password. Defaults to PI_PASSWORD in .env.")
     parser.add_argument("--port", type=int, default=22, help="SSH port.")
@@ -93,21 +99,27 @@ def start_one(ssh, remote_dir: str, wayland_display: str, role: str) -> None:
 def main() -> None:
     args = parse_args()
 
-    target = resolve_target(device=args.device, host=args.host, ip=args.ip)
     username, password = resolve_credentials(username=args.username, password=args.password)
+    targets = select_targets(args.devices)
 
-    print(f"Connecting to {target.host}:{args.port} as {username}...")
-    ssh = connect_ssh(target.host, username, password, port=args.port)
+    print(f"Starting player-panel processes on {len(targets)} device(s): " + ", ".join(f"{i}:{t.host}" for i, t in targets))
 
-    try:
+    def worker(ssh, log) -> None:
+        log("Starting player-panel processes...")
         start_one(ssh, remote_dir=args.remote_dir, wayland_display=args.wayland_display, role="left")
         if args.stagger > 0:
             time.sleep(args.stagger)
         start_one(ssh, remote_dir=args.remote_dir, wayland_display=args.wayland_display, role="right")
-        print("Started two player-panel processes (left, right).")
-        print(f"Logs: {args.remote_dir}/logs/canvas_left.log and canvas_right.log")
-    finally:
-        ssh.close()
+        log(f"Started (left, right). Logs: {args.remote_dir}/logs/canvas_left.log and canvas_right.log")
+
+    run_on_devices(
+        targets,
+        worker,
+        username=username,
+        password=password,
+        port=args.port,
+        summary_label="Start complete",
+    )
 
 
 if __name__ == "__main__":
