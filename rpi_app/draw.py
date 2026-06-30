@@ -180,6 +180,26 @@ TUTORIAL_PAGE3_BG_PCT = 40.0
 TUTORIAL_PAGE3_BG_SOLID_PCT = 20.0
 TUTORIAL_PAGE3_BG_EDGE_PCT = 22.0
 
+# Page 4 layered composition (no slide on any layer). A red background fades in
+# 66..69pct and out 86..89pct; a partial-gauge overlay sits on it at (23, 830),
+# fading in 76..79pct and out 91..94pct; two extracted text overlays fade in/out
+# at their own windows. Each fade is the symmetric window (centre, solid, edge).
+TUTORIAL_PAGE4_BG_IMAGE = ASSETS_DIR / "Tutorial4_background.png"
+TUTORIAL_PAGE4_BG_FADE = (77.5, 8.5, 11.5)  # in 66..69, out 86..89
+TUTORIAL_PAGE4_GAUGE_IMAGE = ASSETS_DIR / "Tutorial4_partial_gauge.png"
+TUTORIAL_PAGE4_GAUGE_POS = (23, 830)
+TUTORIAL_PAGE4_GAUGE_FADE = (85.0, 6.0, 9.0)  # in 76..79, out 91..94
+TUTORIAL_PAGE4_TEXT_A_IMAGE = ASSETS_DIR / "Tutorial4a_text.png"
+TUTORIAL_PAGE4_TEXT_A_FADE = (70.0, 1.0, 4.0)  # in 66..69, out 71..74
+TUTORIAL_PAGE4_TEXT_B_IMAGE = ASSETS_DIR / "Tutorial4b_text.png"
+TUTORIAL_PAGE4_TEXT_B_FADE = (85.0, 6.0, 9.0)  # in 76..79, out 91..94
+# Page 4 speed-bar demo: the play-state speed widget fed a scripted scalar. It
+# holds at 20pct speed (red "collision"), ramps to 90pct (green "OK") over
+# 81..89pct, then holds. The whole widget fades in 66..69pct and out 91..94pct
+# (symmetric window centred on 80pct with solid=11 and edge=14).
+TUTORIAL_SPEED_BAR_POINTS = [(81.0, 0.20), (89.0, 0.90)]
+TUTORIAL_SPEED_BAR_FADE = (80.0, 11.0, 14.0)
+
 # Default symmetric fade-in / hold / fade-out envelope for tutorial page objects,
 # in progress-percent units around each object's setpoint. ``SOLID`` is the
 # half-width that stays fully opaque; ``EDGE`` is the half-width at which the
@@ -306,6 +326,25 @@ def draw_tutorial(surface: pygame.Surface, fonts: Fonts, context: Context) -> No
         surface, context, RIGHT_BUG_IMAGE, RIGHT_BUG_X, TUTORIAL_RIGHT_ODOMETER,
         TUTORIAL_RIGHT_BUG_ANGLE_POINTS, TUTORIAL_RIGHT_BUG_FADE,
     )
+
+    # Page 4 at 66..94pct: a red background with a partial gauge and two extracted
+    # text overlays, plus the scripted speed-bar widget. All layers are
+    # fixed-position (no slide); each fades on its own window.
+    ImageElement(TUTORIAL_PAGE4_BG_IMAGE, 0, 0, alpha=fade_window(*TUTORIAL_PAGE4_BG_FADE)).draw(
+        surface, context
+    )
+    ImageElement(
+        TUTORIAL_PAGE4_GAUGE_IMAGE, *TUTORIAL_PAGE4_GAUGE_POS, alpha=fade_window(*TUTORIAL_PAGE4_GAUGE_FADE)
+    ).draw(surface, context)
+    ImageElement(TUTORIAL_PAGE4_TEXT_A_IMAGE, 0, 0, alpha=fade_window(*TUTORIAL_PAGE4_TEXT_A_FADE)).draw(
+        surface, context
+    )
+    ImageElement(TUTORIAL_PAGE4_TEXT_B_IMAGE, 0, 0, alpha=fade_window(*TUTORIAL_PAGE4_TEXT_B_FADE)).draw(
+        surface, context
+    )
+    bar_scalar = Keyframes(_tutorial_progress, TUTORIAL_SPEED_BAR_POINTS)(context)
+    bar_alpha = int(fade_window(*TUTORIAL_SPEED_BAR_FADE)(context))
+    _render_speed_bar(surface, context, bar_scalar, bar_alpha)
 
 
 
@@ -498,13 +537,27 @@ def _draw_speed_bar(surface: pygame.Surface, context: Context) -> None:
     scalar = context.speed_scalar()
     if scalar is None:
         return
+    _render_speed_bar(surface, context, scalar)
+
+
+def _render_speed_bar(
+    surface: pygame.Surface, context: Context, scalar: float, alpha: int = 255
+) -> None:
+    """Draw the speed-bar widget for an explicit ``scalar`` (0..1) and ``alpha``.
+
+    Shared by the play state (fed ``collision.final_scalar``) and the tutorial,
+    which overrides the scalar with a scripted value and fades the whole widget.
+    """
+
+    if alpha <= 0:
+        return
     scalar = max(0.0, min(1.0, scalar))
     ok = scalar >= SPEED_BAR_THRESHOLD
     fill_image = SPEED_BAR_GREEN if ok else SPEED_BAR_RED
     text_image = SPEED_OK_TEXT if ok else SPEED_BAD_TEXT
 
-    blit_image_left(surface, fill_image, SPEED_BAR_X, SPEED_BAR_Y, SPEED_BAR_W * scalar)
-    ImageElement(text_image, SPEED_BAR_X, SPEED_BAR_Y).draw(surface, context)
+    blit_image_left(surface, fill_image, SPEED_BAR_X, SPEED_BAR_Y, SPEED_BAR_W * scalar, alpha)
+    ImageElement(text_image, SPEED_BAR_X, SPEED_BAR_Y, alpha=alpha).draw(surface, context)
 
 
 def _draw_play_bug(

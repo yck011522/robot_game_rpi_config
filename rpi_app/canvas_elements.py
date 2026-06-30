@@ -313,13 +313,14 @@ def blit_image_left(
     dest_x: float,
     dest_y: float,
     width: float,
+    alpha: int = 255,
 ) -> None:
     """Blit the leftmost ``width`` columns of an image at ``(dest_x, dest_y)``.
 
     This drives a left-to-right progress fill: a coloured bar image is revealed
     from its left edge by ``width`` pixels over a track drawn on the background.
     ``width`` is clamped to the image and rounded to whole pixels; a non-positive
-    width draws nothing.
+    width draws nothing. ``alpha`` (0..255) scales the whole slice for fades.
     """
 
     image = load_image(image_path)
@@ -327,7 +328,11 @@ def blit_image_left(
     w = max(0, min(img_w, int(round(width))))
     if w <= 0:
         return
-    surface.blit(image.subsurface(pygame.Rect(0, 0, w, img_h)), (int(dest_x), int(dest_y)))
+    slice_ = image.subsurface(pygame.Rect(0, 0, w, img_h))
+    if alpha < 255:
+        slice_ = slice_.copy()
+        slice_.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)
+    surface.blit(slice_, (int(dest_x), int(dest_y)))
 
 
 class ImageElement:
