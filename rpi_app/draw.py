@@ -171,6 +171,11 @@ TUTORIAL_PAGE2_PCT = 10.0
 TUTORIAL_FADE_SOLID_PCT = 1.0
 TUTORIAL_FADE_EDGE_PCT = 4.0
 
+# Vertical travel for a sliding page: it sits ``+PX`` below its setpoint, reaches
+# ``0`` (its full-page resting position) at the setpoint, then continues to
+# ``-PX`` above it, so scrolling forward pushes the page upward off-screen.
+TUTORIAL_SLIDE_PX = 50.0
+
 
 def _tutorial_progress(context: Context) -> float:
     """Tutorial progress percent for this player, defaulting to 0 when unknown."""
@@ -207,6 +212,30 @@ def fade_window(
     )
 
 
+def slide_window(
+    setpoint: float,
+    span: float = TUTORIAL_SLIDE_PX,
+    edge: float = TUTORIAL_FADE_EDGE_PCT,
+    driver: Callable[[Context], float] = _tutorial_progress,
+) -> Keyframes:
+    """Build a linear scroll-position driver around ``setpoint``.
+
+    The returned ``Keyframes`` maps the driver value (tutorial progress percent by
+    default) to an offset that slides from ``+span`` at ``setpoint - edge`` through
+    ``0`` at the setpoint to ``-span`` at ``setpoint + edge``. Plug it into an
+    element's ``x`` or ``y`` to scroll it past its resting position as progress
+    crosses the setpoint.
+    """
+
+    return Keyframes(
+        driver,
+        [
+            (setpoint - edge, span),
+            (setpoint + edge, -span),
+        ],
+    )
+
+
 def draw_tutorial(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
     """Interactive tutorial state: full-page pages that cross-fade by progress.
 
@@ -215,18 +244,27 @@ def draw_tutorial(surface: pygame.Surface, fonts: Fonts, context: Context) -> No
     ``fade_window`` so neighbouring pages briefly cross-fade as the player scrolls.
     """
 
+    # Page 1 at 0pct
     surface.fill(BLACK)
-    ImageElement(TUTORIAL_PAGE1_IMAGE, 0, 0, alpha=fade_window(TUTORIAL_PAGE1_PCT)).draw(surface, context)
+    ImageElement(
+        TUTORIAL_PAGE1_IMAGE, 0, slide_window(TUTORIAL_PAGE1_PCT), alpha=fade_window(TUTORIAL_PAGE1_PCT)
+    ).draw(surface, context)
     ImageElement(
         SCROLL_ARROW_IMAGE, SCROLL_ARROW_X, _scroll_arrow_y, alpha=fade_window(TUTORIAL_PAGE1_PCT)
     ).draw(surface, context)
 
+    # Page 2 at 10pct; the page image is player-specific.
     page2 = TUTORIAL_PAGE2_IMAGES.get(context.index + 1)
     if page2 is not None:
-        ImageElement(page2, 0, 0, alpha=fade_window(TUTORIAL_PAGE2_PCT)).draw(surface, context)
+        ImageElement(
+            page2, 0, slide_window(TUTORIAL_PAGE2_PCT), alpha=fade_window(TUTORIAL_PAGE2_PCT)
+        ).draw(surface, context)
         ImageElement(
             SCROLL_ARROW_IMAGE, SCROLL_ARROW_X, _scroll_arrow_y, alpha=fade_window(TUTORIAL_PAGE2_PCT)
         ).draw(surface, context)
+
+    # Page 3 ...
+    
 
 
 # Gameplay-state assets and layout (top-left anchored coordinates).
