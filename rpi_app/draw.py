@@ -193,11 +193,12 @@ TUTORIAL_PAGE4_TEXT_A_IMAGE = ASSETS_DIR / "Tutorial4a_text.png"
 TUTORIAL_PAGE4_TEXT_A_FADE = (70.0, 1.0, 4.0)  # in 66..69, out 71..74
 TUTORIAL_PAGE4_TEXT_B_IMAGE = ASSETS_DIR / "Tutorial4b_text.png"
 TUTORIAL_PAGE4_TEXT_B_FADE = (85.0, 6.0, 9.0)  # in 76..79, out 91..94
-# Page 4 speed-bar demo: the play-state speed widget fed a scripted scalar. It
-# holds at 20pct speed (red "collision"), ramps to 90pct (green "OK") over
-# 81..89pct, then holds. The whole widget fades in 66..69pct and out 91..94pct
-# (symmetric window centred on 80pct with solid=11 and edge=14).
-TUTORIAL_SPEED_BAR_POINTS = [(81.0, 0.20), (89.0, 0.90)]
+# Page 4 speed-bar demo: the play-state speed widget fed a scripted scalar. Its
+# own background track sits above the red background but below the speed bar.
+TUTORIAL_SPEED_BAR_BG_IMAGE = ASSETS_DIR / "SpeedBarBackground.png"
+TUTORIAL_SPEED_BAR_BG_POS = (23, 356)
+TUTORIAL_SPEED_BAR_BG_FADE = (80.0, 11.0, 14.0)  # in 66..69, out 91..94
+TUTORIAL_SPEED_BAR_POINTS = [(66.0, 0.40), (79.0, 0.10), (81.0, 0.10), (89.0, 0.90)]
 TUTORIAL_SPEED_BAR_FADE = (80.0, 11.0, 14.0)
 
 # Default symmetric fade-in / hold / fade-out envelope for tutorial page objects,
@@ -342,6 +343,9 @@ def draw_tutorial(surface: pygame.Surface, fonts: Fonts, context: Context) -> No
     ImageElement(TUTORIAL_PAGE4_TEXT_B_IMAGE, 0, 0, alpha=fade_window(*TUTORIAL_PAGE4_TEXT_B_FADE)).draw(
         surface, context
     )
+    ImageElement(
+        TUTORIAL_SPEED_BAR_BG_IMAGE, *TUTORIAL_SPEED_BAR_BG_POS, alpha=fade_window(*TUTORIAL_SPEED_BAR_BG_FADE)
+    ).draw(surface, context)
     bar_scalar = Keyframes(_tutorial_progress, TUTORIAL_SPEED_BAR_POINTS)(context)
     bar_alpha = int(fade_window(*TUTORIAL_SPEED_BAR_FADE)(context))
     _render_speed_bar(surface, context, bar_scalar, bar_alpha)
@@ -362,7 +366,7 @@ TUTORIAL_LEFT_BUG_FADE = (40.0, 21.0, 24.0)
 # 41pct, moves to +30deg by 49pct, holds to 51pct, rises to +50deg by 55pct, then
 # holds. Fade in 26..29pct, out 61..64pct.
 TUTORIAL_RIGHT_BUG_ANGLE_POINTS = [
-    (26.0, -30.0), (29.0, -15.0), (41.0, -15.0), (49.0, 30.0), (51.0, 30.0), (55.0, 50.0),
+    (26.0, -30.0), (49.0, 30.0), (51.0, 30.0), (55.0, 50.0),
 ]
 TUTORIAL_RIGHT_BUG_FADE = (45.0, 16.0, 19.0)
 
