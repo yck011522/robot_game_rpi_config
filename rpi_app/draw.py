@@ -298,7 +298,39 @@ def draw_tutorial(surface: pygame.Surface, fonts: Fonts, context: Context) -> No
         ImageElement(text_image, 0, slide_window(setpoint), alpha=fade_window(setpoint)).draw(
             surface, context
         )
+    _draw_tutorial_left_bug(surface, context)
 
+
+
+# Page 3 guided LeftBug. The bug reuses the play-state LeftBug art, geometry, and
+# odometer behaviour, but its dial angle is scripted from tutorial progress to
+# walk the player through the motion: it slides in from the 0deg position to rest
+# at 30deg over 16..20pct, holds until 50pct, rises to 75deg by 60pct, then holds.
+# The angle->y mapping is the play-state one, so the bug and its odometer move and
+# read exactly as they would in play. Fade in 16..19pct and out 61..64pct, which
+# is the symmetric window centred on 40pct with solid=21 and edge=24.
+TUTORIAL_BUG_ANGLE_POINTS = [(16.0, 0.0), (20.0, 30.0), (50.0, 30.0), (60.0, 75.0)]
+TUTORIAL_BUG_FADE_PCT = 40.0
+TUTORIAL_BUG_FADE_SOLID_PCT = 21.0
+TUTORIAL_BUG_FADE_EDGE_PCT = 24.0
+
+
+def _draw_tutorial_left_bug(surface: pygame.Surface, context: Context) -> None:
+    """Draw the guided LeftBug whose dial angle is scripted from tutorial progress."""
+
+    angle = Keyframes(_tutorial_progress, TUTORIAL_BUG_ANGLE_POINTS)(context)
+    alpha = int(
+        fade_window(
+            TUTORIAL_BUG_FADE_PCT,
+            solid=TUTORIAL_BUG_FADE_SOLID_PCT,
+            edge=TUTORIAL_BUG_FADE_EDGE_PCT,
+        )(context)
+    )
+    if alpha <= 0:
+        return
+    y = remap(angle, PLAY_ANGLE_BOTTOM, PLAY_ANGLE_TOP, BUG_Y_BOTTOM, BUG_Y_TOP)
+    ImageElement(LEFT_BUG_IMAGE, LEFT_BUG_X, y, alpha=alpha).draw(surface, context)
+    TUTORIAL_LEFT_ODOMETER.draw(surface, LEFT_BUG_X, y, angle, context.elapsed_s, alpha)
 
 
 # Gameplay-state assets and layout (top-left anchored coordinates).
@@ -333,6 +365,9 @@ PROX_SCALE_RANGE_DEG = 360.0
 # These hold their own animation state, so build them once and reuse them.
 LEFT_ODOMETER = OdometerElement(SIGN_SCROLL_IMAGE, NUMBER_SCROLL_IMAGE, base_dx=22, base_dy=8)
 RIGHT_ODOMETER = OdometerElement(SIGN_SCROLL_IMAGE, NUMBER_SCROLL_IMAGE, base_dx=8, base_dy=8)
+# A separate left-bug odometer for the tutorial demo, so its snap animation state
+# stays independent of the play-state readout.
+TUTORIAL_LEFT_ODOMETER = OdometerElement(SIGN_SCROLL_IMAGE, NUMBER_SCROLL_IMAGE, base_dx=22, base_dy=8)
 
 # Speed-override bar: a left-to-right fill over a grey track printed on the
 # background. ``collision.final_scalar`` (0..1) sets the fill width. At or above
