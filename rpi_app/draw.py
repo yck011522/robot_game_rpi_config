@@ -162,6 +162,24 @@ TUTORIAL_PAGE2_IMAGES = {n: ASSETS_DIR / f"TutorialPage2P{n}.png" for n in range
 TUTORIAL_PAGE1_PCT = 0.0
 TUTORIAL_PAGE2_PCT = 10.0
 
+# Page 3 spans several detents (20pct..60pct). Its background holds solid across
+# the whole span and then fades out, while five text overlays each appear at
+# their own 10% detent.
+TUTORIAL_PAGE3_BG_IMAGE = ASSETS_DIR / "Tutorial3_background.png"
+TUTORIAL_PAGE3_TEXT_IMAGES = {
+    20.0: ASSETS_DIR / "Tutorial3a_text.png",
+    30.0: ASSETS_DIR / "Tutorial3b_text.png",
+    40.0: ASSETS_DIR / "Tutorial3c_text.png",
+    50.0: ASSETS_DIR / "Tutorial3d_text.png",
+    60.0: ASSETS_DIR / "Tutorial3e_text.png",
+}
+# The background uses a wide, slide-free fade window: solid across the 20..60 span
+# (centre 40, solid half-width 20), with only a narrow margin so it fades in just
+# before 20pct and fades out just after 60pct.
+TUTORIAL_PAGE3_BG_PCT = 40.0
+TUTORIAL_PAGE3_BG_SOLID_PCT = 20.0
+TUTORIAL_PAGE3_BG_EDGE_PCT = 22.0
+
 # Default symmetric fade-in / hold / fade-out envelope for tutorial page objects,
 # in progress-percent units around each object's setpoint. ``SOLID`` is the
 # half-width that stays fully opaque; ``EDGE`` is the half-width at which the
@@ -263,8 +281,24 @@ def draw_tutorial(surface: pygame.Surface, fonts: Fonts, context: Context) -> No
             SCROLL_ARROW_IMAGE, SCROLL_ARROW_X, _scroll_arrow_y, alpha=fade_window(TUTORIAL_PAGE2_PCT)
         ).draw(surface, context)
 
-    # Page 3 ...
-    
+# Page 3 at 20pct..60pct: a long-lived background with five text detents. The
+    # background holds solid across the span (no slide), and each text overlay
+    # slides and fades in at its own detent.
+    ImageElement(
+        TUTORIAL_PAGE3_BG_IMAGE,
+        0,
+        0,
+        alpha=fade_window(
+            TUTORIAL_PAGE3_BG_PCT,
+            solid=TUTORIAL_PAGE3_BG_SOLID_PCT,
+            edge=TUTORIAL_PAGE3_BG_EDGE_PCT,
+        ),
+    ).draw(surface, context)
+    for setpoint, text_image in TUTORIAL_PAGE3_TEXT_IMAGES.items():
+        ImageElement(text_image, 0, slide_window(setpoint), alpha=fade_window(setpoint)).draw(
+            surface, context
+        )
+
 
 
 # Gameplay-state assets and layout (top-left anchored coordinates).
