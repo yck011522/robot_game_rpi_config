@@ -403,8 +403,13 @@ class ImageElement:
     def draw(self, surface: pygame.Surface, context: Context) -> None:
         """Blit the image onto ``surface`` using values resolved from ``context``."""
 
-        image = load_image(self.image_path)
         alpha = int(max(0, min(255, resolve(self.alpha, context))))
+        if alpha <= 0:
+            # Fully transparent: skip the copy/blend/blit entirely. The tutorial
+            # draws every page each frame and relies on this fast path for the
+            # (usually many) pages that are currently faded fully out.
+            return
+        image = load_image(self.image_path)
         if alpha != 255:
             # Scale every pixel's alpha by alpha/255 while preserving RGB and the
             # source's own per-pixel transparency (set_alpha is unreliable here).
