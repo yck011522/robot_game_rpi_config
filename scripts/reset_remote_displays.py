@@ -39,13 +39,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--between-delay",
         type=float,
-        default=1.0,
+        default=3.0,
         help="Seconds to wait between turning individual outputs off/on (default: 1.0).",
     )
     parser.add_argument(
         "--settle-delay",
         type=float,
-        default=2.0,
+        default=4.0,
         help="Seconds to wait after both outputs are off before turning them back on (default: 2.0).",
     )
     args = parser.parse_args()
