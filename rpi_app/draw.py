@@ -360,6 +360,16 @@ def draw_tutorial(surface: pygame.Surface, fonts: Fonts, context: Context) -> No
     bar_alpha = int(fade_window(*TUTORIAL_SPEED_BAR_FADE)(context))
     _render_speed_bar(surface, context, bar_scalar, bar_alpha)
 
+    # A second, independent bug pair guides the motion on the speed page.
+    _draw_tutorial_bug(
+        surface, context, LEFT_BUG_IMAGE, LEFT_BUG_X, TUTORIAL_PAGE4_LEFT_ODOMETER,
+        TUTORIAL_PAGE4_LEFT_BUG_ANGLE_POINTS, TUTORIAL_PAGE4_LEFT_BUG_FADE,
+    )
+    _draw_tutorial_bug(
+        surface, context, RIGHT_BUG_IMAGE, RIGHT_BUG_X, TUTORIAL_PAGE4_RIGHT_ODOMETER,
+        TUTORIAL_PAGE4_RIGHT_BUG_ANGLE_POINTS, TUTORIAL_PAGE4_RIGHT_BUG_FADE,
+    )
+
     # Page 5 at 96pct: a full-page image that fades in and then stays visible.
     ImageElement(
         TUTORIAL_PAGE5_IMAGE, 0, 0, alpha=Keyframes(_tutorial_progress, TUTORIAL_PAGE5_ALPHA_POINTS)
@@ -420,6 +430,17 @@ TUTORIAL_RIGHT_BUG_ANGLE_POINTS = [
 ]
 TUTORIAL_RIGHT_BUG_FADE = (45.0, 16.0, 19.0)
 
+# Page 4 guided bugs: a second, independent left/right pair on the speed page.
+# They share the play-state geometry and the _draw_tutorial_bug helper but keep
+# their own odometers and profiles. Both fade in 76..79pct and out 91..94pct
+# (symmetric window centred on 85pct, solid=6, edge=9).
+# Left bug (dial): holds at -60deg, then moves to +15deg over 81..89pct.
+TUTORIAL_PAGE4_LEFT_BUG_ANGLE_POINTS = [(81.0, -60.0), (88.0, 15.0)]
+TUTORIAL_PAGE4_LEFT_BUG_FADE = (85.0, 6.0, 9.0)
+# Right bug (robot): holds at -28deg, then moves to +15deg over 84..89pct.
+TUTORIAL_PAGE4_RIGHT_BUG_ANGLE_POINTS = [(85.0, -28.0), (89.0, 15.0)]
+TUTORIAL_PAGE4_RIGHT_BUG_FADE = (85.0, 6.0, 9.0)
+
 
 def _draw_tutorial_bug(
     surface: pygame.Surface,
@@ -478,6 +499,9 @@ RIGHT_ODOMETER = OdometerElement(SIGN_SCROLL_IMAGE, NUMBER_SCROLL_IMAGE, base_dx
 # stays independent of the play-state readout.
 TUTORIAL_LEFT_ODOMETER = OdometerElement(SIGN_SCROLL_IMAGE, NUMBER_SCROLL_IMAGE, base_dx=22, base_dy=8)
 TUTORIAL_RIGHT_ODOMETER = OdometerElement(SIGN_SCROLL_IMAGE, NUMBER_SCROLL_IMAGE, base_dx=8, base_dy=8)
+# A second, independent tutorial pair for the bugs shown on page 4.
+TUTORIAL_PAGE4_LEFT_ODOMETER = OdometerElement(SIGN_SCROLL_IMAGE, NUMBER_SCROLL_IMAGE, base_dx=22, base_dy=8)
+TUTORIAL_PAGE4_RIGHT_ODOMETER = OdometerElement(SIGN_SCROLL_IMAGE, NUMBER_SCROLL_IMAGE, base_dx=8, base_dy=8)
 
 # Speed-override bar: a left-to-right fill over a grey track printed on the
 # background. ``collision.final_scalar`` (0..1) sets the fill width. At or above
