@@ -46,6 +46,8 @@ MONO_FONT_SIZE = 40  # Fixed-size numeric labels inside the 120x54 bugs.
 
 # Semi-transparent pause overlay, drawn over any state whenever ``paused`` is set.
 PAUSED_OVERLAY_IMAGE = ASSETS_DIR / "PausedOverlay.png"
+# Full-panel stale-signal overlay, drawn when no valid UDP packet is currently fresh.
+STALE_OVERLAY_IMAGE = ASSETS_DIR / "StaleOverlay.png"
 
 
 @dataclass
@@ -884,7 +886,7 @@ _STATE_DRAW = {
 
 
 def render(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
-    """Clear the surface, draw the current state, then draw the debug overlay."""
+    """Clear the surface, draw state overlays, then draw signal/debug overlays."""
 
     surface.fill(BACKGROUND)
     draw_state = _STATE_DRAW.get(context.active_stage(), draw_daydreaming)
@@ -892,7 +894,10 @@ def render(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
     if context.paused():
         # Pause can apply to any lifecycle stage; overlay it on the drawn page.
         ImageElement(PAUSED_OVERLAY_IMAGE, 0, 0).draw(surface, context)
-    draw_debug_overlay(surface, fonts, context)
+    draw_stale_signal_overlay(surface, fonts, context)
+    if context.values.get("debug_overlay", False):
+        # Debug diagnostics are optional and always sit above the stale overlay.
+        draw_debug_overlay(surface, fonts, context)
 
 
 def _format_deg(value: float | None) -> str:
@@ -905,6 +910,19 @@ def _format_timer(value: int | None) -> str:
     """Format a countdown in seconds, or ``n/a`` when missing."""
 
     return "n/a" if value is None else f"{value} s"
+
+
+def draw_stale_signal_overlay(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
+    """Draw the full-panel stale-signal warning when UDP input is not fresh.
+
+    ``fonts`` is accepted to keep this overlay function's signature parallel with
+    ``draw_debug_overlay``; the current implementation uses the prepared artwork
+    rather than rendering text.
+    """
+
+    if context.fresh:
+        return
+    ImageElement(STALE_OVERLAY_IMAGE, 0, 0).draw(surface, context)
 
 
 def draw_debug_overlay(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:

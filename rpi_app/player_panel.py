@@ -76,6 +76,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bind", default="0.0.0.0", help="UDP bind address.")
     parser.add_argument("--port", type=int, default=49200, help="UDP port.")
     parser.add_argument("--fps", type=int, default=60, help="Render FPS cap.")
+    parser.add_argument(
+        "--debug-overlay",
+        action="store_true",
+        help="Show the diagnostics text overlay above every other panel layer.",
+    )
     return parser.parse_args()
 
 
@@ -396,7 +401,10 @@ def main() -> None:
             index=index,
             fresh=fresh,
             elapsed_s=time.monotonic() - start_mono,
-            values={"fps": clock.get_fps()},
+            values={
+                "debug_overlay": args.debug_overlay,  # Enables the topmost diagnostics text when requested.
+                "fps": clock.get_fps(),  # Last measured render rate, shown only by the diagnostics overlay.
+            },
         )
 
         draw.render(screen, fonts, context)
