@@ -212,7 +212,7 @@ TUTORIAL_PAGE5_ALPHA_POINTS = [(96.0, 0.0), (99.0, 255.0)]
 # the same font family as the play timer. It shows throughout the tutorial (no
 # fade); only its y position animates, sliding from near the bottom up to
 # mid-screen as progress crosses 92..96pct.
-TUTORIAL_TIMER_FONT_SIZE = 80  # Placeholder size; tune to taste.
+TUTORIAL_TIMER_FONT_SIZE = 50  # Timer size; tune to taste.
 TUTORIAL_TIMER_Y_POINTS = [(92.0, 1850.0), (96.0, 880.0)]
 # Default symmetric fade-in / hold / fade-out envelope for tutorial page objects,
 # in progress-percent units around each object's setpoint. ``SOLID`` is the
