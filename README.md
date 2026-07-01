@@ -121,24 +121,28 @@ The exact mapping between physical display, Pygame display index, and player rol
 
 1. Flash the microSD card using Raspberry Pi Imager.
 2. Use Raspberry Pi OS with Desktop, 64-bit.
-3. In Raspberry Pi Imager, configure:
-   - hostname matching `devices.csv`
-   - username
-   - password
-   - SSH enabled
-   - Wi-Fi disabled / blank
-   - Raspberry Pi Connect disabled
-4. Reinsert the flashed card into the host computer.
-5. Run:
+3. In Raspberry Pi Imager, leave Wi-Fi blank/disabled for the closed Ethernet
+   LAN. The repository provisioning script writes the hostname, static IP,
+   SSH enablement, and login user on the boot partition.
+4. Reinsert the flashed card into the host computer and find the mounted boot
+   partition drive/path.
+5. Make sure `.env` contains the shared Pi login credentials:
 
 ```bash
-python scripts/prepare_card.py --device 1 --boot R:\ --username pi --password "<shared-password>"
+PI_USERNAME=pi
+PI_PASSWORD=<shared-password>
+```
+
+6. Run:
+
+```bash
+python scripts/prepare_card.py --device 1 --boot R:\
 ```
 
 On macOS/Linux, the boot partition path may look like:
 
 ```bash
-python scripts/prepare_card.py --device 1 --boot /Volumes/bootfs --username pi --password "<shared-password>"
+python scripts/prepare_card.py --device 1 --boot /Volumes/bootfs
 ```
 
 The script writes first-boot configuration files to the boot partition. It does not write the Raspberry Pi OS image itself; Raspberry Pi Imager handles OS flashing.
@@ -153,7 +157,21 @@ config.txt patch: usb_max_current_enable=1
 THIS_CARD_IS_<hostname>_<ip>.txt
 ```
 
-Important: do not commit real passwords to this repository. Pass the password on the command line during local provisioning only.
+Important: do not commit real passwords to this repository. `.env` is ignored
+by git and is the normal place for local credentials. Use `--username` and
+`--password` only for deliberate one-off overrides.
+
+7. Eject the card, insert it into the Raspberry Pi, and boot it.
+8. After SSH works, deploy the app and install auto-start services from the host
+   computer:
+
+```bash
+python scripts/deploy_app.py --devices 1
+python scripts/configure_auto_start.py --devices 1
+```
+
+`configure_auto_start.py` runs over SSH. It is not a boot-partition/card-editing
+step.
 
 ### B. Immediate validation after boot
 
