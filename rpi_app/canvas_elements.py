@@ -213,6 +213,45 @@ class Context:
             return None
         return float(value) if isinstance(value, (int, float)) else None
 
+    def paused(self) -> bool:
+        """Return whether the game is currently paused (E-stop / barrier / etc.)."""
+
+        return bool(self.state.get("paused")) if isinstance(self.state, dict) else False
+
+    def _team_group(self, group: str) -> Any:
+        """Return ``state.teams[team][group]`` or ``None`` if absent."""
+
+        try:
+            return self.state["teams"][self.team][group]  # type: ignore[index]
+        except (TypeError, KeyError):
+            return None
+
+    def practice_in_practice(self) -> bool:
+        """Return whether this team is still in the one-player-at-a-time practice."""
+
+        practice = self._team_group("practice")
+        return bool(practice.get("in_practice")) if isinstance(practice, dict) else False
+
+    def practice_active_player(self) -> int | None:
+        """Return the 1-based player number whose practice turn it is, or ``None``."""
+
+        practice = self._team_group("practice")
+        if isinstance(practice, dict) and isinstance(practice.get("active_player"), int):
+            return practice["active_player"]
+        return None
+
+    def practice_completed(self) -> bool:
+        """Return whether this player's practice turn has latched complete."""
+
+        value = self._team_joint("practice", "completed")
+        return value is True
+
+    def practice_target_deg(self) -> float | None:
+        """Return this player's practice target in absolute joint degrees, or ``None``."""
+
+        value = self._team_joint("practice", "target_pose_deg")
+        return float(value) if isinstance(value, (int, float)) else None
+
 
 class TextElement:
     """A single line of text with animatable position and opacity.

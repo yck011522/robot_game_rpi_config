@@ -44,6 +44,9 @@ OVERLAY_ALPHA = 128
 OVERLAY_FONT_SIZE = 16  # Fixed-size diagnostics text.
 MONO_FONT_SIZE = 40  # Fixed-size numeric labels inside the 120x54 bugs.
 
+# Semi-transparent pause overlay, drawn over any state whenever ``paused`` is set.
+PAUSED_OVERLAY_IMAGE = ASSETS_DIR / "PausedOverlay.png"
+
 
 @dataclass
 class Fonts:
@@ -478,6 +481,17 @@ BUG_Y_BOTTOM = 1720  # Top-left y when the joint is at -180 deg.
 PLAY_ANGLE_TOP = 180.0
 PLAY_ANGLE_BOTTOM = -180.0
 
+# Practice warm-up (a sub-state of play). While ``practice.in_practice`` is set,
+# each panel overlays a treatment chosen by whose turn it is: the active player
+# sees the active overlay, a player who has finished sees the completed overlay,
+# and everyone else sees the waiting overlay for the current active player. The
+# active player also gets a target bug (no odometer) beneath the left bug, placed
+# by the practice target angle through the same mapping as the play bugs.
+PRACTICE_ACTIVE_OVERLAY = ASSETS_DIR / "PracticeRoundActivePlayerOverlay.png"
+PRACTICE_COMPLETED_OVERLAY = ASSETS_DIR / "PracticeRoundCompletedOverlay.png"
+PRACTICE_WAITING_OVERLAYS = {n: ASSETS_DIR / f"PracticeRoundWaitingP{n}Overlay.png" for n in range(1, 7)}
+LEFT_TARGET_BUG_IMAGE = ASSETS_DIR / "LeftTargetBug.png"
+
 # Top banner naming this panel's joint, chosen by joint number (index + 1).
 PLAY_BANNER_IMAGES = {joint: ASSETS_DIR / f"Joint{joint}.png" for joint in range(1, 7)}
 PLAY_BANNER_X = 23
@@ -534,6 +548,7 @@ def draw_play(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
     """
 
     _draw_play_scene(surface, context)
+    _draw_practice_overlays(surface, context)
 
 
 def _draw_play_scene(surface: pygame.Surface, context: Context) -> None:
@@ -548,9 +563,52 @@ def _draw_play_scene(surface: pygame.Surface, context: Context) -> None:
     _draw_collision_zones(surface, context)
     _draw_speed_bar(surface, context)
 
+    _draw_practice_target_bug(surface, context)
     _draw_play_bug(surface, context, LEFT_BUG_IMAGE, LEFT_BUG_X, context.dial_robot_deg(), LEFT_ODOMETER)
     _draw_play_bug(surface, context, RIGHT_BUG_IMAGE, RIGHT_BUG_X, context.robot_deg(), RIGHT_ODOMETER)
     _draw_play_timer(surface, context)
+
+
+def _draw_practice_target_bug(surface: pygame.Surface, context: Context) -> None:
+    """Draw the left target bug beneath the left bug for the active practice player.
+
+    Only visible while this team is in practice and this panel is the active
+    player. The bug carries no odometer; its position comes from the practice
+    target angle through the same mapping used for the play bugs.
+    """
+
+    if not context.practice_in_practice():
+        return
+    if context.practice_active_player() != context.index + 1:
+        return
+    target_deg = context.practice_target_deg()
+    if target_deg is None:
+        return
+    y = remap(target_deg, PLAY_ANGLE_BOTTOM, PLAY_ANGLE_TOP, BUG_Y_BOTTOM, BUG_Y_TOP)
+    ImageElement(LEFT_TARGET_BUG_IMAGE, LEFT_BUG_X, y).draw(surface, context)
+
+
+def _draw_practice_overlays(surface: pygame.Surface, context: Context) -> None:
+    """Overlay this panel's practice treatment on top of the play scene.
+
+    Active only while this team is in practice: the active player sees the active
+    overlay, a player whose turn has latched complete sees the completed overlay,
+    and everyone else sees the waiting overlay for the current active player.
+    """
+
+    if not context.practice_in_practice():
+        return
+    active = context.practice_active_player()
+    if active == context.index + 1:
+        ImageElement(PRACTICE_ACTIVE_OVERLAY, 0, 0).draw(surface, context)
+    elif context.practice_completed():
+        # The completed-overlay art may not be present yet; skip it if missing.
+        if PRACTICE_COMPLETED_OVERLAY.is_file():
+            ImageElement(PRACTICE_COMPLETED_OVERLAY, 0, 0).draw(surface, context)
+    elif active is not None:
+        overlay = PRACTICE_WAITING_OVERLAYS.get(active)
+        if overlay is not None:
+            ImageElement(overlay, 0, 0).draw(surface, context)
 
 
 def _draw_play_banner(surface: pygame.Surface, context: Context) -> None:
@@ -721,6 +779,9 @@ def render(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
     surface.fill(BACKGROUND)
     draw_state = _STATE_DRAW.get(context.active_stage(), draw_daydreaming)
     draw_state(surface, fonts, context)
+    if context.paused():
+        # Pause can apply to any lifecycle stage; overlay it on the drawn page.
+        ImageElement(PAUSED_OVERLAY_IMAGE, 0, 0).draw(surface, context)
     draw_debug_overlay(surface, fonts, context)
 
 
