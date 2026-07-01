@@ -198,9 +198,19 @@ TUTORIAL_PAGE4_TEXT_B_FADE = (85.0, 6.0, 9.0)  # in 76..79, out 91..94
 TUTORIAL_SPEED_BAR_BG_IMAGE = ASSETS_DIR / "SpeedBarBackground.png"
 TUTORIAL_SPEED_BAR_BG_POS = (23, 356)
 TUTORIAL_SPEED_BAR_BG_FADE = (80.0, 11.0, 14.0)  # in 66..69, out 91..94
-TUTORIAL_SPEED_BAR_POINTS = [(66.0, 0.40), (79.0, 0.10), (81.0, 0.10), (89.0, 0.90)]
+TUTORIAL_SPEED_BAR_POINTS = [(66.0, 0.30), (79.0, 0.10), (81.0, 0.10), (89.0, 0.90)]
 TUTORIAL_SPEED_BAR_FADE = (80.0, 11.0, 14.0)
+# Page 5: a full-page image that fades in 96..99pct and then stays visible (the
+# Keyframes clamps to full alpha above 99pct, so it never fades out).
+TUTORIAL_PAGE5_IMAGE = ASSETS_DIR / "Tutorial 5.png"
+TUTORIAL_PAGE5_ALPHA_POINTS = [(96.0, 0.0), (99.0, 255.0)]
 
+# Tutorial countdown timer: a centred readout driven by the phase countdown, in
+# the same font family as the play timer. It shows throughout the tutorial (no
+# fade); only its y position animates, sliding from near the bottom up to
+# mid-screen as progress crosses 92..96pct.
+TUTORIAL_TIMER_FONT_SIZE = 80  # Placeholder size; tune to taste.
+TUTORIAL_TIMER_Y_POINTS = [(92.0, 1850.0), (96.0, 880.0)]
 # Default symmetric fade-in / hold / fade-out envelope for tutorial page objects,
 # in progress-percent units around each object's setpoint. ``SOLID`` is the
 # half-width that stays fully opaque; ``EDGE`` is the half-width at which the
@@ -349,6 +359,46 @@ def draw_tutorial(surface: pygame.Surface, fonts: Fonts, context: Context) -> No
     bar_scalar = Keyframes(_tutorial_progress, TUTORIAL_SPEED_BAR_POINTS)(context)
     bar_alpha = int(fade_window(*TUTORIAL_SPEED_BAR_FADE)(context))
     _render_speed_bar(surface, context, bar_scalar, bar_alpha)
+
+    # Page 5 at 96pct: a full-page image that fades in and then stays visible.
+    ImageElement(
+        TUTORIAL_PAGE5_IMAGE, 0, 0, alpha=Keyframes(_tutorial_progress, TUTORIAL_PAGE5_ALPHA_POINTS)
+    ).draw(surface, context)
+
+    # The countdown timer is drawn last so it sits on top of every page.
+    _draw_tutorial_timer(surface, context)
+
+
+def _draw_tutorial_timer(surface: pygame.Surface, context: Context) -> None:
+    """Draw the phase countdown, centred, sliding from the bottom to mid-screen.
+
+    The value comes from the phase ``countdown_s`` so it keeps counting wherever
+    it sits; only the y position animates with tutorial progress. Nothing is drawn
+    when no countdown is available.
+    """
+
+    seconds = context.countdown_s()
+    if seconds is None:
+        return
+    TextElement(
+        str(seconds),
+        surface.get_width() / 2,
+        Keyframes(_tutorial_progress, TUTORIAL_TIMER_Y_POINTS),
+        _tutorial_timer_font(),
+        color=TIMER_COLOR,
+        align="center",
+        valign="center",
+    ).draw(surface, context)
+
+
+@lru_cache(maxsize=1)
+def _tutorial_timer_font() -> pygame.font.Font:
+    """Return the tutorial countdown font (play-timer family, smaller size)."""
+
+    try:
+        return pygame.font.Font(str(FONT_PATH), TUTORIAL_TIMER_FONT_SIZE)
+    except FileNotFoundError:
+        return pygame.font.Font(None, TUTORIAL_TIMER_FONT_SIZE)
 
 
 
