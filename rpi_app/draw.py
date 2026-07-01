@@ -775,9 +775,14 @@ def _draw_play_timer(
 
 
 def draw_reset(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
-    """Robot rewind / return state."""
+    """Robot rewind / return state: the frozen play scene under a time's-up overlay.
 
-    _draw_placeholder(surface, fonts, context, "RESET")
+    Reuses the play scene with the timer pinned to zero and drops the same
+    ``reset_timesup`` overlay on top, matching the conclusion's rewind phase.
+    """
+
+    _draw_play_scene(surface, context, countdown_override=0)
+    ImageElement(RESET_TIMESUP_IMAGE, 0, 0).draw(surface, context)
 
 
 def draw_conclusion(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
