@@ -537,6 +537,24 @@ TIMER_CENTER_Y = 265  # Vertical center of the readout in the new background box
 TIMER_COLOR = pygame.Color("#ffffff")
 TIMER_FONT_SIZE = 149  # Static size determined from the current 480x1920 panel.
 
+# Conclusion: a "time's up" overlay drops onto the frozen play scene during the
+# robot's rewind, then the bucket-counting scoreboard replaces it, and finally a
+# full-page win/lose/tie reveal is latched by the top-level ``winner_team``.
+RESET_TIMESUP_IMAGE = ASSETS_DIR / "reset_timesup.png"
+CONCLUDE_TEAM_BACKGROUNDS = {
+    "a": ASSETS_DIR / "ConcludeTeamA_Background.png",
+    "b": ASSETS_DIR / "ConcludeTeamB_Background.png",
+}
+CONCLUDE_WIN_TEXT = ASSETS_DIR / "ConcludeWinText.png"
+CONCLUDE_LOSE_TEXT = ASSETS_DIR / "ConcludeLoseText.png"
+CONCLUDE_TIE_TEXT = ASSETS_DIR / "ConcludeTieText.png"
+# Team brand colours (from the game config: Team A is blue, Team B is red). The
+# opposing team's total is muted to grey so this panel's own team reads first.
+CONCLUDE_TEAM_COLORS = {"a": pygame.Color("#0000ff"), "b": pygame.Color("#ff0000")}
+CONCLUDE_OPPONENT_COLOR = pygame.Color("#686868")
+CONCLUDE_OPPONENT_SCORE_Y = 300  # Opposing team's total, higher up.
+CONCLUDE_OWN_SCORE_Y = 550  # Own team's running total, nearer the middle.
+
 
 def draw_play(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
     """Timed gameplay: a fixed grey background with two angle-tracking bugs.
@@ -551,11 +569,14 @@ def draw_play(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
     _draw_practice_overlays(surface, context)
 
 
-def _draw_play_scene(surface: pygame.Surface, context: Context) -> None:
+def _draw_play_scene(
+    surface: pygame.Surface, context: Context, countdown_override: int | None = None
+) -> None:
     """Draw the shared play scene: background, banner, zones, bugs, and timer.
 
     Used by ``draw_play`` and by the daydreaming states, which layer their own
-    overlays on top of this same scene.
+    overlays on top of this same scene. ``countdown_override`` pins the timer to
+    a fixed value (used by the conclusion's frozen "time's up" scene).
     """
 
     ImageElement(PLAY_BG_IMAGE, 0, 0).draw(surface, context)
@@ -566,7 +587,7 @@ def _draw_play_scene(surface: pygame.Surface, context: Context) -> None:
     _draw_practice_target_bug(surface, context)
     _draw_play_bug(surface, context, LEFT_BUG_IMAGE, LEFT_BUG_X, context.dial_robot_deg(), LEFT_ODOMETER)
     _draw_play_bug(surface, context, RIGHT_BUG_IMAGE, RIGHT_BUG_X, context.robot_deg(), RIGHT_ODOMETER)
-    _draw_play_timer(surface, context)
+    _draw_play_timer(surface, context, countdown_override)
 
 
 def _draw_practice_target_bug(surface: pygame.Surface, context: Context) -> None:
@@ -728,14 +749,17 @@ def _timer_font() -> pygame.font.Font:
         return pygame.font.Font(None, TIMER_FONT_SIZE)
 
 
-def _draw_play_timer(surface: pygame.Surface, context: Context) -> None:
+def _draw_play_timer(
+    surface: pygame.Surface, context: Context, override: int | None = None
+) -> None:
     """Draw the remaining seconds, fitted to and centered in the timer box.
 
     The readout is skipped when no countdown value is available so a missing
-    field never blanks the rest of the scene.
+    field never blanks the rest of the scene. ``override`` forces a fixed value
+    (e.g. ``0`` while the conclusion freezes the scene) regardless of state.
     """
 
-    seconds = context.countdown_s()
+    seconds = override if override is not None else context.countdown_s()
     if seconds is None:
         return
     text = str(seconds)
@@ -757,9 +781,90 @@ def draw_reset(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
 
 
 def draw_conclusion(surface: pygame.Surface, fonts: Fonts, context: Context) -> None:
-    """Bucket counting and final-score presentation state."""
+    """Bucket counting and final-score presentation state.
 
-    _draw_placeholder(surface, fonts, context, "CONCLUSION")
+    Three phases play out in order: while the robot rewinds (no bucket is being
+    counted yet) the frozen play scene shows with a "time's up" overlay and its
+    timer pinned to zero; once the robot starts on the first bucket the scoreboard
+    replaces it and totals climb; and when ``winner_team`` latches non-null the
+    full-page win/lose/tie reveal is shown on top of the scoreboard.
+    """
+
+    winner = context.winner_team()
+    if winner is not None:
+        _draw_conclusion_scoreboard(surface, context)
+        _draw_conclusion_reveal(surface, context, winner)
+        return
+
+    if context.conclusion_active_bucket_index() is not None or context.conclusion_done():
+        _draw_conclusion_scoreboard(surface, context)
+        return
+
+    # Rewind phase: keep the play interface, freezing the timer at zero.
+    _draw_play_scene(surface, context, countdown_override=0)
+    ImageElement(RESET_TIMESUP_IMAGE, 0, 0).draw(surface, context)
+
+
+def _draw_conclusion_scoreboard(surface: pygame.Surface, context: Context) -> None:
+    """Draw the blank team background with both running totals.
+
+    This panel's own team background fills the canvas; its own summed total sits
+    lower in the team colour, and the opposing team's total sits higher in grey.
+    """
+
+    background = CONCLUDE_TEAM_BACKGROUNDS.get(context.team)
+    if background is not None:
+        ImageElement(background, 0, 0).draw(surface, context)
+
+    opponent = "b" if context.team == "a" else "a"
+    _draw_conclusion_score(
+        surface,
+        context,
+        context.summed_score(opponent),
+        CONCLUDE_OPPONENT_SCORE_Y,
+        CONCLUDE_OPPONENT_COLOR,
+    )
+    _draw_conclusion_score(
+        surface,
+        context,
+        context.summed_score(context.team),
+        CONCLUDE_OWN_SCORE_Y,
+        CONCLUDE_TEAM_COLORS.get(context.team, TIMER_COLOR),
+    )
+
+
+def _draw_conclusion_score(
+    surface: pygame.Surface,
+    context: Context,
+    value: float | None,
+    y: float,
+    color: pygame.Color,
+) -> None:
+    """Draw one centred integer total in the timer font, or nothing if missing."""
+
+    if value is None:
+        return
+    TextElement(
+        str(int(round(value))),
+        surface.get_width() / 2,
+        y,
+        _timer_font(),
+        color=color,
+        align="center",
+        valign="top",
+    ).draw(surface, context)
+
+
+def _draw_conclusion_reveal(surface: pygame.Surface, context: Context, winner: str) -> None:
+    """Overlay the full-page win/lose/tie art once ``winner_team`` is latched."""
+
+    if winner == "tie":
+        image = CONCLUDE_TIE_TEXT
+    elif winner == context.team:
+        image = CONCLUDE_WIN_TEXT
+    else:
+        image = CONCLUDE_LOSE_TEXT
+    ImageElement(image, 0, 0).draw(surface, context)
 
 
 _STATE_DRAW = {

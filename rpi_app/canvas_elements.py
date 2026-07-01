@@ -252,6 +252,44 @@ class Context:
         value = self._team_joint("practice", "target_pose_deg")
         return float(value) if isinstance(value, (int, float)) else None
 
+    def winner_team(self) -> str | None:
+        """Return the latched conclusion winner (``"a"``/``"b"``/``"tie"``), or ``None``.
+
+        This is the top-level ``winner_team`` reveal contract: it stays ``None``
+        until the conclusion show has counted every bucket, then flips to a
+        non-null value that receivers latch to show the final result.
+        """
+
+        if isinstance(self.state, dict):
+            value = self.state.get("winner_team")
+            if isinstance(value, str) and value:
+                return value
+        return None
+
+    def summed_score(self, team: str | None = None) -> float | None:
+        """Return ``teams[team].summed_score``, defaulting to this panel's team."""
+
+        team = team if team is not None else self.team
+        try:
+            value = self.state["teams"][team]["summed_score"]  # type: ignore[index]
+        except (TypeError, KeyError):
+            return None
+        return float(value) if isinstance(value, (int, float)) else None
+
+    def conclusion_active_bucket_index(self) -> int | None:
+        """Return the bucket index currently being counted, or ``None`` when idle."""
+
+        conclusion = self._team_group("conclusion")
+        if isinstance(conclusion, dict) and isinstance(conclusion.get("active_bucket_index"), int):
+            return conclusion["active_bucket_index"]
+        return None
+
+    def conclusion_done(self) -> bool:
+        """Return whether this team's final conclusion totals can be shown."""
+
+        conclusion = self._team_group("conclusion")
+        return bool(conclusion.get("done")) if isinstance(conclusion, dict) else False
+
 
 class TextElement:
     """A single line of text with animatable position and opacity.
