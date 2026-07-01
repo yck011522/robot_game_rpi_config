@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Prepare a Raspberry Pi OS boot partition after Raspberry Pi Imager has flashed it.
 
@@ -67,6 +67,27 @@ write_files:
       DEVICE_IP={ip}
       LEFT_DISPLAY_INDEX=0
       RIGHT_DISPLAY_INDEX=1
+
+  - path: /etc/NetworkManager/system-connections/Wired connection 1.nmconnection
+    owner: root:root
+    permissions: "0600"
+    content: |
+      [connection]
+      id=Wired connection 1
+      type=ethernet
+      interface-name=eth0
+      autoconnect=true
+
+      [ethernet]
+
+      [ipv4]
+      method=manual
+      addresses={ip}/24
+
+      [ipv6]
+      method=ignore
+
+      [proxy]
 
 runcmd:
   - echo "Provisioned {hostname} at {ip}" > /var/log/rpi-node-provisioning.log
@@ -251,3 +272,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

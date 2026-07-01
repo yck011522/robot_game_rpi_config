@@ -1,0 +1,126 @@
+Report UTC: 2026-06-21T12:54:14.427493+00:00
+
+===== identity =====
+$ hostname; whoami; id
+rpi5-12
+pi
+uid=1000(pi) gid=1000(pi) groups=1000(pi),4(adm),20(dialout),27(sudo),29(audio),44(video),46(plugdev),100(users),102(netdev),986(gpio),988(i2c),989(spi),996(input)
+[exit 0]
+
+===== project node config =====
+$ cat /etc/rpi-node.conf 2>/dev/null || true
+DEVICE_INDEX=2
+DEVICE_HOSTNAME=rpi5-12
+DEVICE_IP=192.168.0.12
+LEFT_DISPLAY_INDEX=0
+RIGHT_DISPLAY_INDEX=1
+[exit 0]
+
+===== link and addresses =====
+$ ip -br link; ip -br addr
+lo               UNKNOWN        00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP> 
+eth0             UP             88:a2:9e:05:1d:4d <BROADCAST,MULTICAST,UP,LOWER_UP> 
+wlan0            DOWN           88:a2:9e:05:1d:4e <BROADCAST,MULTICAST> 
+lo               UNKNOWN        127.0.0.1/8 ::1/128 
+eth0             UP             
+wlan0            DOWN
+[exit 0]
+
+===== eth0 details =====
+$ ip addr show eth0; ethtool eth0 2>/dev/null || true
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 88:a2:9e:05:1d:4d brd ff:ff:ff:ff:ff:ff
+Settings for eth0:
+	Supported ports: [ TP	 MII ]
+	Supported link modes:   10baseT/Half 10baseT/Full
+	                        100baseT/Half 100baseT/Full
+	                        1000baseT/Half 1000baseT/Full
+	Supported pause frame use: Transmit-only
+	Supports auto-negotiation: Yes
+	Supported FEC modes: Not reported
+	Advertised link modes:  10baseT/Half 10baseT/Full
+	                        100baseT/Half 100baseT/Full
+	                        1000baseT/Half 1000baseT/Full
+	Advertised pause frame use: Transmit-only
+	Advertised auto-negotiation: Yes
+	Advertised FEC modes: Not reported
+	Link partner advertised link modes:  10baseT/Half 10baseT/Full
+	                                     100baseT/Half 100baseT/Full
+	                                     1000baseT/Full
+	Link partner advertised pause frame use: Symmetric Receive-only
+	Link partner advertised auto-negotiation: Yes
+	Link partner advertised FEC modes: Not reported
+	Speed: 1000Mb/s
+	Duplex: Full
+	Auto-negotiation: on
+	master-slave cfg: preferred slave
+	master-slave status: slave
+	Port: Twisted Pair
+	PHYAD: 1
+	Transceiver: external
+	MDI-X: Unknown
+	Link detected: yes
+[exit 0]
+
+===== routes =====
+$ ip route
+<no stdout>
+[exit 0]
+
+===== networkmanager status =====
+$ systemctl is-active NetworkManager; nmcli -t general status
+active
+disconnected:none:enabled:disabled:missing:enabled:unknown
+[exit 0]
+
+===== networkmanager devices =====
+$ nmcli device status
+DEVICE  TYPE      STATE                   CONNECTION 
+lo      loopback  connected (externally)  lo         
+eth0    ethernet  disconnected            --         
+wlan0   wifi      unavailable             --
+[exit 0]
+
+===== networkmanager connections =====
+$ nmcli -f NAME,UUID,TYPE,DEVICE,AUTOCONNECT connection show
+NAME                UUID                                  TYPE      DEVICE  AUTOCONNECT 
+lo                  394daaa0-129e-4581-a7fd-00c0976857c2  loopback  lo      no          
+Wired connection 1  77202aaa-701c-389d-be72-7d3db8ec8ed2  ethernet  --      yes
+[exit 0]
+
+===== active eth0 profile =====
+$ active=$(nmcli -t -f GENERAL.CONNECTION device show eth0 | sed 's/^GENERAL.CONNECTION://'); if [ -n "$active" ] && [ "$active" != "--" ]; then nmcli -f connection.id,connection.uuid,connection.type,connection.interface-name,connection.autoconnect,ipv4.method,ipv4.addresses,ipv4.gateway,ipv4.dns,ipv4.route-metric connection show "$active"; else echo 'No active eth0 connection'; fi
+No active eth0 connection
+[exit 0]
+
+===== networkmanager profile files =====
+$ sudo -n ls -l /etc/NetworkManager/system-connections 2>/dev/null || ls -l /etc/NetworkManager/system-connections || true
+total 0
+[exit 0]
+
+===== cloud-init status =====
+$ cloud-init status --long 2>/dev/null || true
+status: done
+extended_status: degraded done
+boot_status_code: enabled-by-generator
+last_update: Thu, 01 Jan 1970 00:01:06 +0000
+detail: DataSourceNoCloud [seed=cmdline,ds_config_seedfrom,file:///boot/firmware][dsmode=local]
+errors: []
+recoverable_errors:
+WARNING:
+	- Could not find module named cc_netplan_nm_patch (searched ['cc_netplan_nm_patch', 'cloudinit.config.cc_netplan_nm_patch'])
+[exit 0]
+
+===== kernel cmdline =====
+$ cat /proc/cmdline
+reboot=w coherent_pool=1M 8250.nr_uarts=1 pci=pcie_bus_safe cgroup_disable=memory numa_policy=interleave nvme.max_host_mem_size_mb=32  numa=fake=8 system_heap.max_order=0 iommu_dma_numa_policy=interleave smsc95xx.macaddr=88:A2:9E:05:1D:4D vc_mem.mem_base=0x3fc00000 vc_mem.mem_size=0x40000000  console=ttyAMA10,115200 console=tty1 root=PARTUUID=fef9ea7e-02 rootfstype=ext4 fsck.repair=yes rootwait quiet splash plymouth.ignore-serial-consoles cfg80211.ieee80211_regdom=HK ds=nocloud;i=rpi-imager-1781959315136
+[exit 0]
+
+===== dmesg network snippets =====
+$ dmesg -T | egrep -i 'eth0|link up|link down|r8169|NetworkManager|dhcp' | tail -n 120
+[Sun Jun 21 13:46:22 2026] brcm-pcie 1000120000.pcie: link up, 5.0 GT/s PCIe x4 (!SSC)
+[Sun Jun 21 13:46:22 2026] macb 1f00100000.ethernet eth0: Cadence GEM rev 0x00070109 at 0x1f00100000 irq 106 (88:a2:9e:05:1d:4d)
+[Sun Jun 21 13:46:28 2026] macb 1f00100000.ethernet eth0: PHY [1f00100000.ethernet-ffffffff:01] driver [Broadcom BCM54213PE] (irq=POLL)
+[Sun Jun 21 13:46:28 2026] macb 1f00100000.ethernet eth0: configuring for phy/rgmii-id link mode
+[Sun Jun 21 13:46:32 2026] macb 1f00100000.ethernet eth0: Link is Up - 1Gbps/Full - flow control tx
+[exit 0]
